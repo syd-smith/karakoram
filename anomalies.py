@@ -19,12 +19,53 @@ from wrf import (getvar, ALL_TIMES, interplevel)
 import xarray as xr
 
 
+# ==================================
+# - Establish Relative File Path - 
+# ==================================
+
+
 current_file_directory = Path(__file__).resolve().parent
 # parent_directory = current_file_directory.parent
 sys.path.append(str(current_file_directory))
 
 import from_savanna.nclcmaps as cmap
 
+
+path = '/uufs/chpc.utah.edu/common/home/strong-group7/husile/karakoram/model_result/wrfout_ctl/2020/'
+  
+# if data for given variable accumulates in a "continuously rising staircase" and thus has to be differenced to finnd raw value
+start_position = sorted(glob.glob(path + 'wrfout_d02_2020-06-30_18:00:00'))
+
+# create a list with all control experiment files and open them
+collect_files = start_position + sorted(glob.glob(path + 'wrfout_d02_2020-07-31_18:00:00'))
+open_files = [Dataset(file) for file in collect_files]
+
+# find hourly precipitation vales (data essentially creating a staircase so you have to difference values from the previous timestamp to current)
+accumulated = getvar(open_files, 'RAINNC', timeidx = ALL_TIMES)
+difference = accumulated.isel(Time = 1) - accumulated.isel(Time = 0)
+
+exp_path = '/uufs/chpc.utah.edu/common/home/strong-group7/husile/karakoram/model_result/wrfout_MODISImproved/2020/'
+  
+# if data for given variable accumulates in a "continuously rising staircase" and thus has to be differenced to finnd raw value
+exp_start_position = sorted(glob.glob(exp_path + 'wrfout_d02_2020-06-30_18:00:00'))
+
+# create a list with all control experiment files and open them
+exp_collect_files = exp_start_position + sorted(glob.glob(exp_path + 'wrfout_d02_2020-07-31_18:00:00'))
+exp_open_files = [Dataset(file) for file in exp_collect_files]
+
+# find hourly precipitation vales (data essentially creating a staircase so you have to difference values from the previous timestamp to current)
+exp_accumulated = getvar(exp_open_files, 'RAINNC', timeidx = ALL_TIMES)
+exp_difference = exp_accumulated.isel(Time = 1) - exp_accumulated.isel(Time = 0)
+
+anom = exp_difference - difference
+    #%%
+hourly = accumulated.diff(dim = 'Time') / 6 # find average hourly precip rate for the 6 hour period
+hourly.mean(dim = 'Time') # compute an average precip rate for the given month 
+
+
+
+
+#%%
 
 def data_access(variable, month, domain, experiment):
     # termini experiment = MODISIMPROVED
@@ -34,7 +75,7 @@ def data_access(variable, month, domain, experiment):
         path = f'/uufs/chpc.utah.edu/common/home/strong-group7/husile/karakoram/model_result/wrfout_{experiment}/{year}/'
           
         # if data for given variable accumulates in a "continuously rising staircase" and thus has to be differenced to finnd raw value
-        if variable == 'RAINNC':
+        if variable in ['Total Pr', 'RAINC', 'RAINNC']:
             # define starting positions for differencing
             if month == 7:
                 start_position = sorted(glob.glob(path + f'wrfout_{domain}_{year}-06-30_18:00:00'))
@@ -46,7 +87,11 @@ def data_access(variable, month, domain, experiment):
             open_files = [Dataset(file) for file in collect_files]
             
             # find hourly precipitation vales (data essentially creating a staircase so you have to difference values from the previous timestamp to current)
-            accumulated = getvar(open_files, variable, timeidx = ALL_TIMES)
+            if variable == 'Total Pr':
+                accumulated = getvar(open_files, 'RAINNC', timeidx = ALL_TIMES) + getvar(open_files, 'RAINC', timeidx = ALL_TIMES)
+            else:
+                accumulated = getvar(open_files, variable, timeidx = ALL_TIMES)
+                
             hourly = accumulated.diff(dim = 'Time') / 6 # find average hourly precip rate for the 6 hour period
             five_year_data.append(hourly.mean(dim = 'Time')) # compute an average precip rate for the given month 
             
@@ -63,12 +108,16 @@ def data_access(variable, month, domain, experiment):
 
     return five_year_data
 
+
+# there is no convectice precip (RAINC)
 ctl_02 = data_access('RAINNC', 7, 'd02', 'ctl')
 exp_02 = data_access('RAINNC', 7, 'd02', 'MODISImproved')
-#%%
-pr_anom2020_in = exp_02[-1] - ctl_02[-1] 
+
 
 #%%
+pr_anom2020_in = exp_02[-1] - ctl_02[-1]
+
+
 def five_yr_anom(variable, month, domain):
     
     # call five years worth of data from each experiment
@@ -95,9 +144,9 @@ def five_yr_anom(variable, month, domain):
     return anom
 
 # pr_anom = five_yr_anom('RAINNC', 7, 'd02')
-
 #%%
-def plot_anom(anomaly, colorbar_label):
+
+def plot_anom(anomaly, colorbar_label, color):
     
     fig = plt.figure(figsize = (10, 10))
     ax = plt.axes(projection = ccrs.PlateCarree())
@@ -117,16 +166,15 @@ def plot_anom(anomaly, colorbar_label):
                              label = 'D03 Bounds', zorder = 5)
     ax.add_patch(rect)
     
-    if anomaly.min() < 0.00 < anomaly.max():
-        norm = mcolors.TwoSlopeNorm(vmin = anomaly.min(), vcenter = 0.00, vmax = anomaly.max())
+    if anomaly.min() < 1 < anomaly.max():
+        norm = mcolors.TwoSlopeNorm(vmin = anomaly.min(), vcenter = 1, vmax = anomaly.max())
     else:
         norm = mcolors.Normalize(vmin = anomaly.min(), vmax = anomaly.max())
-    
-    mapp = ax.contourf(anomaly.XLONG, anomaly.XLAT, anomaly.values, transform = ccrs.PlateCarree(), cmap = cmap.cmap('posneg_2'), extend = 'both', levels = 10, norm = norm)
-    plt.colorbar(mapp, ax = ax, orientation = 'horizontal', label = colorbar_label, extend = 'both')
-    
-pr_anomaly = plot_anom(ctl_02[-1], '2020 Precip Anomalies (mm/hr)')
 
+    mapp = ax.contourf(anomaly.XLONG, anomaly.XLAT, anomaly.values, transform = ccrs.PlateCarree(), cmap = cmap.cmap(color), extend = 'both', levels = 120, norm = norm)
+    plt.colorbar(mapp, ax = ax, orientation = 'horizontal', label = colorbar_label, extend = 'both', pad = 0.03)
+    
+pr_anomaly = plot_anom(anom, '2020 Precip Anomalies', 'MPL_BrBG')
 
 
 
@@ -175,4 +223,4 @@ ctl_mean =  combine_ctl.mean(dim = 'Years').assign_coords(ctl_coords)
 year1_anom = ctl[4] - ctl_mean
 ctl_coords = {'XLAT': ctl[4].XLAT, 'XLONG': ctl[4].XLONG}
 year1_anom =  year1_anom.assign_coords(ctl_coords)
-first_anom_map = plot_anom(year1_anom, 'MFC 2020 Year Anom at 350 hPa (g kg-1 s-1)')
+first_anom_map = plot_anom(year1_anom, 'MFC 2020 Year Anom at 350 hPa (g kg-1 s-1)', 'posneg_2')

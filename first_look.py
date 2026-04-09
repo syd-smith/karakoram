@@ -45,10 +45,13 @@ exp_files_d02 =  sorted(glob.glob(exp_dir + "wrfout_d02*2016-06-30*")) + sorted(
 ctl_list_d02 = [Dataset(x) for x in ctl_files_d02]
 exp_list_d02 = [Dataset(x) for x in exp_files_d02]
 
+test = getvar(ctl_list_d02, 'RAINC', timeidx=ALL_TIMES)
+
+#%%
 ctl_pr_d02 = getvar(ctl_list_d02, 'RAINNC', timeidx=ALL_TIMES) + getvar(ctl_list_d02, 'RAINC', timeidx=ALL_TIMES)
 exp_pr_d02 = getvar(exp_list_d02, 'RAINNC', timeidx=ALL_TIMES) + getvar(exp_list_d02, 'RAINC', timeidx=ALL_TIMES)
 
-
+#%%
 def backward_diff_time(dataarray):
     forward_diff = dataarray.diff(dim='Time')
     first_timestep = dataarray.isel(Time=0) * 0
