@@ -31,42 +31,6 @@ sys.path.append(str(current_file_directory))
 import from_savanna.nclcmaps as cmap
 
 
-path = '/uufs/chpc.utah.edu/common/home/strong-group7/husile/karakoram/model_result/wrfout_ctl/2020/'
-  
-# if data for given variable accumulates in a "continuously rising staircase" and thus has to be differenced to finnd raw value
-start_position = sorted(glob.glob(path + 'wrfout_d02_2020-06-30_18:00:00'))
-
-# create a list with all control experiment files and open them
-collect_files = start_position + sorted(glob.glob(path + 'wrfout_d02_2020-07-31_18:00:00'))
-open_files = [Dataset(file) for file in collect_files]
-
-# find hourly precipitation vales (data essentially creating a staircase so you have to difference values from the previous timestamp to current)
-accumulated = getvar(open_files, 'RAINNC', timeidx = ALL_TIMES)
-difference = accumulated.isel(Time = 1) - accumulated.isel(Time = 0)
-
-exp_path = '/uufs/chpc.utah.edu/common/home/strong-group7/husile/karakoram/model_result/wrfout_MODISImproved/2020/'
-  
-# if data for given variable accumulates in a "continuously rising staircase" and thus has to be differenced to finnd raw value
-exp_start_position = sorted(glob.glob(exp_path + 'wrfout_d02_2020-06-30_18:00:00'))
-
-# create a list with all control experiment files and open them
-exp_collect_files = exp_start_position + sorted(glob.glob(exp_path + 'wrfout_d02_2020-07-31_18:00:00'))
-exp_open_files = [Dataset(file) for file in exp_collect_files]
-
-# find hourly precipitation vales (data essentially creating a staircase so you have to difference values from the previous timestamp to current)
-exp_accumulated = getvar(exp_open_files, 'RAINNC', timeidx = ALL_TIMES)
-exp_difference = exp_accumulated.isel(Time = 1) - exp_accumulated.isel(Time = 0)
-
-anom = exp_difference - difference
-    #%%
-hourly = accumulated.diff(dim = 'Time') / 6 # find average hourly precip rate for the 6 hour period
-hourly.mean(dim = 'Time') # compute an average precip rate for the given month 
-
-
-
-
-#%%
-
 def data_access(variable, month, domain, experiment):
     # termini experiment = MODISIMPROVED
     five_year_data = []
@@ -92,7 +56,7 @@ def data_access(variable, month, domain, experiment):
             else:
                 accumulated = getvar(open_files, variable, timeidx = ALL_TIMES)
                 
-            hourly = accumulated.diff(dim = 'Time') / 6 # find average hourly precip rate for the 6 hour period
+            hourly = accumulated.diff(dim = 'Time') # find precip rate for the 6 hour period
             five_year_data.append(hourly.mean(dim = 'Time')) # compute an average precip rate for the given month 
             
         # if data for given variable is provided as an instantaneous result at that timestamp
@@ -107,15 +71,6 @@ def data_access(variable, month, domain, experiment):
             five_year_data.append(instantaneous.mean(dim = 'Time')) # append file to list to access outside of the loop
 
     return five_year_data
-
-
-# there is no convectice precip (RAINC)
-ctl_02 = data_access('RAINNC', 7, 'd02', 'ctl')
-exp_02 = data_access('RAINNC', 7, 'd02', 'MODISImproved')
-
-
-#%%
-pr_anom2020_in = exp_02[-1] - ctl_02[-1]
 
 
 def five_yr_anom(variable, month, domain):
@@ -138,13 +93,11 @@ def five_yr_anom(variable, month, domain):
     # find the five year average
     exp_mean =  combine_exp.mean(dim = 'Years').assign_coords(exp_coords)
 
-    # compute the anomaly
-    anom = exp_mean - ctl_mean
+    # compute the anomaly as a percent
+    anom = (exp_mean / ctl_mean) * 100
     
-    return anom
+    return anom, ctl_mean, exp_mean
 
-# pr_anom = five_yr_anom('RAINNC', 7, 'd02')
-#%%
 
 def plot_anom(anomaly, colorbar_label, color):
     
@@ -166,16 +119,52 @@ def plot_anom(anomaly, colorbar_label, color):
                              label = 'D03 Bounds', zorder = 5)
     ax.add_patch(rect)
     
-    if anomaly.min() < 1 < anomaly.max():
-        norm = mcolors.TwoSlopeNorm(vmin = anomaly.min(), vcenter = 1, vmax = anomaly.max())
-    else:
-        norm = mcolors.Normalize(vmin = anomaly.min(), vmax = anomaly.max())
+    # if anomaly.min() < 1 < anomaly.max():
+    #     norm = mcolors.TwoSlopeNorm(vmin = anomaly.min(), vcenter = 1, vmax = anomaly.max())
+    # else:
+    #     norm = mcolors.Normalize(vmin = anomaly.min(), vmax = anomaly.max())
+    norm = mcolors.TwoSlopeNorm(vmin = 50, vcenter = 100, vmax = 250)
 
-    mapp = ax.contourf(anomaly.XLONG, anomaly.XLAT, anomaly.values, transform = ccrs.PlateCarree(), cmap = cmap.cmap(color), extend = 'both', levels = 120, norm = norm)
+    mapp = ax.contourf(anomaly.XLONG, anomaly.XLAT, anomaly.values, transform = ccrs.PlateCarree(), cmap = cmap.cmap(color), extend = 'both', levels = 20, norm = norm)
     plt.colorbar(mapp, ax = ax, orientation = 'horizontal', label = colorbar_label, extend = 'both', pad = 0.03)
     
-pr_anomaly = plot_anom(anom, '2020 Precip Anomalies', 'MPL_BrBG')
+    
+def main():
+    # five years of raw data for control and experiment respectively
+    ctl_02 = data_access('RAINNC', 7, 'd02', 'ctl')
+    # exp_02 = data_access('RAINNC', 7, 'd02', 'MODISImproved')
+    
+    # # anom for 2016
+    # pr_anom2016 = exp_02[0] / ctl_02[0] * 100
+    # pr2016 = plot_anom(pr_anom2016, '2016 Precip Anomalies', 'MPL_BrBG')
 
+    # # anom for 2017
+    # pr_anom2017 = exp_02[1] / ctl_02[1] * 100
+    # pr2017 = plot_anom(pr_anom2017, '2017 Precip Anomalies', 'MPL_BrBG')
+
+    # # anom for 2018
+    # pr_anom2018 = exp_02[2] / ctl_02[2] * 100
+    # pr2018 = plot_anom(pr_anom2018, '2018 Precip Anomalies', 'MPL_BrBG')
+
+    # # anom for 2019
+    # pr_anom2019 = exp_02[3] / ctl_02[3] * 100
+    # pr2019 = plot_anom(pr_anom2019, '2019 Precip Anomalies', 'MPL_BrBG')
+    
+    # # anom for 2020
+    # pr_anom2020 = exp_02[-1] / ctl_02[-1] * 100 # convert to percent anomaly
+    # pr2020 = plot_anom(pr_anom2020, '2020 Precip Anomalies', 'MPL_BrBG')
+    
+    # five year anom
+    pr_anom, ctl_mean, exp_mean = five_yr_anom('RAINNC', 7, 'd02')
+    # pr_anomaly = plot_anom(pr_anom, 'Five Year Precip Anomalies', 'MPL_BrBG')
+    
+    first = ctl_02[0] / ctl_mean
+    first_map = plot_anom(first, '2016 from Five Year Precip Anomalies', 'MPL_BrBG')
+    
+    
+
+if __name__ == '__main__':
+    main()
 
 
 #%%
