@@ -11,6 +11,8 @@ import glob
 import matplotlib.colors as mcolors
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt
+import metpy.calc as mpcalc
+from metpy.units import units
 from netCDF4 import Dataset
 import numpy as np
 from pathlib import Path
@@ -99,7 +101,7 @@ def five_yr_anom(variable, month, domain):
     return anom, ctl_mean, exp_mean
 
 
-def plot_anom(anomaly, colorbar_label, color):
+def plot_anom(anomaly, title, colorbar_label, color):
     
     fig = plt.figure(figsize = (10, 10))
     ax = plt.axes(projection = ccrs.PlateCarree())
@@ -119,97 +121,140 @@ def plot_anom(anomaly, colorbar_label, color):
                              label = 'D03 Bounds', zorder = 5)
     ax.add_patch(rect)
     
-    # if anomaly.min() < 1 < anomaly.max():
-    #     norm = mcolors.TwoSlopeNorm(vmin = anomaly.min(), vcenter = 1, vmax = anomaly.max())
-    # else:
-    #     norm = mcolors.Normalize(vmin = anomaly.min(), vmax = anomaly.max())
-    norm = mcolors.TwoSlopeNorm(vmin = 50, vcenter = 100, vmax = 250)
+    anom_min = anomaly.min().values
+    anom_max = anomaly.max().values
+    
+    if anom_min < 0 < anom_max:
+        norm = mcolors.TwoSlopeNorm(vmin = anom_min, vcenter = 0, vmax = anom_max)
+    elif colorbar_label == '%':
+        norm = mcolors.TwoSlopeNorm(vmin = 50, vcenter = 100, vmax = 250)
+    else:
+        norm = mcolors.Normalize(vmin = anom_min, vmax = anom_max)
 
     mapp = ax.contourf(anomaly.XLONG, anomaly.XLAT, anomaly.values, transform = ccrs.PlateCarree(), cmap = cmap.cmap(color), extend = 'both', levels = 20, norm = norm)
     plt.colorbar(mapp, ax = ax, orientation = 'horizontal', label = colorbar_label, extend = 'both', pad = 0.03)
     
-    
-def main():
-    # five years of raw data for control and experiment respectively
-    ctl_02 = data_access('RAINNC', 7, 'd02', 'ctl')
-    # exp_02 = data_access('RAINNC', 7, 'd02', 'MODISImproved')
-    
-    # # anom for 2016
-    # pr_anom2016 = exp_02[0] / ctl_02[0] * 100
-    # pr2016 = plot_anom(pr_anom2016, '2016 Precip Anomalies', 'MPL_BrBG')
-
-    # # anom for 2017
-    # pr_anom2017 = exp_02[1] / ctl_02[1] * 100
-    # pr2017 = plot_anom(pr_anom2017, '2017 Precip Anomalies', 'MPL_BrBG')
-
-    # # anom for 2018
-    # pr_anom2018 = exp_02[2] / ctl_02[2] * 100
-    # pr2018 = plot_anom(pr_anom2018, '2018 Precip Anomalies', 'MPL_BrBG')
-
-    # # anom for 2019
-    # pr_anom2019 = exp_02[3] / ctl_02[3] * 100
-    # pr2019 = plot_anom(pr_anom2019, '2019 Precip Anomalies', 'MPL_BrBG')
-    
-    # # anom for 2020
-    # pr_anom2020 = exp_02[-1] / ctl_02[-1] * 100 # convert to percent anomaly
-    # pr2020 = plot_anom(pr_anom2020, '2020 Precip Anomalies', 'MPL_BrBG')
-    
-    # five year anom
-    pr_anom, ctl_mean, exp_mean = five_yr_anom('RAINNC', 7, 'd02')
-    # pr_anomaly = plot_anom(pr_anom, 'Five Year Precip Anomalies', 'MPL_BrBG')
-    
-    first = ctl_02[0] / ctl_mean
-    first_map = plot_anom(first, '2016 from Five Year Precip Anomalies', 'MPL_BrBG')
-    
+    plt.title(title)
     
 
+def mfc_control(domain, month):
+    ctl = []
+    for year in range(2016, 2021):
+        # control
+        ctl_path = f'/uufs/chpc.utah.edu/common/home/strong-group7/husile/karakoram/model_result/wrfout_ctl/{year}/'
+        
+        ctl_collect_files = sorted(glob.glob(ctl_path + f'wrfout_{domain}*0{month}*'))
+        ctl_open_files = [Dataset(file) for file in ctl_collect_files]
+        
+        # get all raw variables
+        ctl_q = getvar(ctl_open_files, 'QVAPOR', timeidx = ALL_TIMES)*1e3
+        ctl_ua = getvar(ctl_open_files, 'ua', timeidx = ALL_TIMES)
+        ctl_va = getvar(ctl_open_files, 'va', timeidx = ALL_TIMES)
+        ctl_p = getvar(ctl_open_files, 'pressure', timeidx = ALL_TIMES)
+        
+        # interpolate data only to 350 hPa level
+        ctl_q_350 = interplevel(ctl_q, ctl_p, 350.0) 
+        ctl_ua_350 = interplevel(ctl_ua, ctl_p, 350.0)
+        ctl_va_350 = interplevel(ctl_va, ctl_p, 350.0)
+        
+        # get grid spacing
+        dx = ctl_open_files[0].DX
+        dy = ctl_open_files[0].DY
+        
+        dq_dx = np.gradient(ctl_q_350, dx, axis = -1)
+        dq_dy = np.gradient(ctl_q_350, dy, axis = -2)
+        
+        du_dx = np.gradient(ctl_ua_350, dx, axis = -1)
+        dv_dy = np.gradient(ctl_va_350, dy, axis = -2)
+        
+        advection = -(ctl_ua_350 * dq_dx + ctl_va_350 * dq_dy)
+        convergence = -ctl_q_350 * (du_dx + dv_dy)
+        moisture_flux_convergence = (advection + convergence).mean(dim = 'Time')
+        
+        ctl.append(moisture_flux_convergence)
+        
+    return ctl
+
+
+def test_mfc(domain, month, experiment):
+    five_year_data = []
+    for year in range(2016, 2021):
+        # control
+        path = f'/uufs/chpc.utah.edu/common/home/strong-group7/husile/karakoram/model_result/wrfout_{experiment}/{year}/'
+        
+        collect_files = sorted(glob.glob(path + f'wrfout_{domain}*0{month}*'))
+        open_files = [Dataset(file) for file in collect_files]
+        
+        # test
+        qv_raw = getvar(open_files, 'QVAPOR', timeidx = ALL_TIMES) # kg/kg
+        ua = getvar(open_files, 'ua', timeidx = ALL_TIMES, units = 'm s-1')
+        va = getvar(open_files, 'va', timeidx = ALL_TIMES, units = 'm s-1')
+        
+        qv = qv_raw.metpy.quantify().metpy.convert_units('g/kg')
+        
+        pre = getvar(open_files, 'pressure', timeidx = ALL_TIMES)
+        
+        uq = qv * ua
+        vq = qv * va
+        
+        # QV*(u,v)
+        uq_lev = interplevel(uq, pre, 350).mean(dim = 'Time')
+        vq_lev = interplevel(vq, pre, 350).mean(dim = 'Time')
+        qv_lev = interplevel(qv, pre, 350)
+        
+        # divergence (Metpy)
+        lats = qv_lev.XLAT.values
+        lons = qv_lev.XLONG.values
+        dx,dy = mpcalc.lat_lon_grid_deltas(lons, lats)
+        # returns divergence as positive values
+        div = mpcalc.divergence(uq_lev, vq_lev, dx = dx, dy = dy)
+        
+        # converts divergence to negative values
+        five_year_data.append(-1 * div)
+        
+    return five_year_data
+
+
+def main(precip = True, mfc = True):
+    
+    if precip:
+        # five years of raw data for control and experiment respectively
+        ctl_02 = data_access('RAINNC', 7, 'd02', 'ctl')
+        exp_02 = data_access('RAINNC', 7, 'd02', 'MODISImproved')
+        
+        # five year anom
+        pr_anom, ctl_mean, exp_mean = five_yr_anom('RAINNC', 7, 'd02')
+        pr_anomaly = plot_anom(pr_anom, 'Anomaly of Five Year Precip Average', '%', 'MPL_BrBG')
+        
+        for index, year in enumerate(range(2016, 2021)):
+            # find the anomaly from experiment to control for that given year
+            pr_anom = exp_02[index] / ctl_02[index] * 100
+            pr_map = plot_anom(pr_anom, f'{year} Precip Anomalies', '%', 'MPL_BrBG')
+            
+            # find anomaly from given year to five year control average
+            anom_from_ctl_mean = ctl_02[index] / ctl_mean * 100
+            from_ctl_mean_map = plot_anom(anom_from_ctl_mean, f'{year} from Five Year Average - Control Precip', '%', 'MPL_BrBG')
+            
+            # find anomaly from given year to five year experiment average
+            anom_from_exp_mean = exp_02[index] / exp_mean * 100
+            from_exp_mean_map = plot_anom(anom_from_exp_mean, f'{year} from Five Year Average - Experiemtn Precip', '%', 'MPL_BrBG')
+    
+    if mfc:
+        ctl = test_mfc('d02', 7, 'ctl')
+        exp = test_mfc('d02', 7, 'MODISImproved')
+        
+        combine_ctl = xr.concat(ctl, dim = 'Years')
+        ctl_coords = {'XLAT': combine_ctl.XLAT.isel(Years = 0), 'XLONG': combine_ctl.XLONG.isel(Years = 0)}
+        ctl_mean =  combine_ctl.mean(dim = 'Years').assign_coords(ctl_coords)
+        
+        combine_exp = xr.concat(exp, dim = 'Years')
+        exp_coords = {'XLAT': combine_exp.XLAT.isel(Years = 0), 'XLONG': combine_exp.XLONG.isel(Years = 0)}
+        exp_mean =  combine_exp.mean(dim = 'Years').assign_coords(exp_coords)
+        
+        for index, year in enumerate(range(2016, 2021)):
+            mfc_yearly = plot_anom(ctl[index], f'{year} Moisture Flux Convergence at 350 hPa', '(g kg-1 s-1)', 'posneg_2')
+            
+            mfc_anom = plot_anom((ctl[index] / exp[index]) * 100, f'{year} MFC Anomaly at 350 hPa', '%', 'posneg_2')
+    
 if __name__ == '__main__':
-    main()
-
-
-#%%
-ctl = []
-
-for year in range(2016, 2021):
-    ctl_path = f'/uufs/chpc.utah.edu/common/home/strong-group7/husile/karakoram/model_result/wrfout_ctl/{year}/'
-    
-    ctl_collect_files = sorted(glob.glob(ctl_path + 'wrfout_d02*06*'))
-    ctl_open_files = [Dataset(file) for file in ctl_collect_files]
-    
-    # get all raw variables
-    ctl_q = getvar(ctl_open_files, 'QVAPOR', timeidx = ALL_TIMES)
-    ctl_ua = getvar(ctl_open_files, 'ua', timeidx = ALL_TIMES)
-    ctl_va = getvar(ctl_open_files, 'va', timeidx = ALL_TIMES)
-    ctl_p = getvar(ctl_open_files, 'pressure', timeidx = ALL_TIMES)
-
-    # interpolate data only to 350 hPa level
-    ctl_q_350 = interplevel(ctl_q, ctl_p, 350.0) * 1000 # convert to g/kg
-    ctl_ua_350 = interplevel(ctl_ua, ctl_p, 350.0)
-    ctl_va_350 = interplevel(ctl_va, ctl_p, 350.0)
-
-    # get grid spacing
-    dx = ctl_open_files[0].DX
-    dy = ctl_open_files[0].DY
-
-    dq_dx = np.gradient(ctl_q_350, dx, axis = -1)
-    dq_dy = np.gradient(ctl_q_350, dy, axis = -2)
-
-    du_dx = np.gradient(ctl_ua_350, dx, axis = -1)
-    dv_dy = np.gradient(ctl_va_350, dy, axis = -2)
-
-    advection = -(ctl_ua_350 * dq_dx + ctl_va_350 * dq_dy)
-    convergence = -ctl_q_350 * (du_dx + dv_dy)
-    moisture_flux_convergence = advection + convergence
-
-    ctl.append(moisture_flux_convergence.mean(dim = 'Time'))
-    
-combine_ctl = xr.concat(ctl, dim = 'Years')
-ctl_coords = {'XLAT': combine_ctl.XLAT.isel(Years = 0), 'XLONG': combine_ctl.XLONG.isel(Years = 0)}
-ctl_mean =  combine_ctl.mean(dim = 'Years').assign_coords(ctl_coords)
-
-# q_map = plot_anom(ctl_mean, 'Moisture Flux Convergence at 350 hPa (g kg-1 s-1)')
-#%%
-year1_anom = ctl[4] - ctl_mean
-ctl_coords = {'XLAT': ctl[4].XLAT, 'XLONG': ctl[4].XLONG}
-year1_anom =  year1_anom.assign_coords(ctl_coords)
-first_anom_map = plot_anom(year1_anom, 'MFC 2020 Year Anom at 350 hPa (g kg-1 s-1)', 'posneg_2')
+    main(precip = False)
