@@ -5,7 +5,7 @@ Created on Thu Apr  2 09:06:36 2026
 
 @author: u1301408
 """
-
+#%%
 import cartopy.crs as ccrs
 import glob
 import matplotlib.colors as mcolors
@@ -215,9 +215,9 @@ def test_mfc(domain, month, experiment):
         vq = qv * va
         
         # interpolate data to 350 hPa level
-        uq_lev = interplevel(uq, pre, 350).mean(dim = 'Time') # has to be 2D array for mpcalc.divergence
-        vq_lev = interplevel(vq, pre, 350).mean(dim = 'Time') # has to be 2D array for mpcalc.divergence
-        qv_lev = interplevel(qv, pre, 350)
+        uq_lev = interplevel(uq, pre, 400).mean(dim = 'Time') # has to be 2D array for mpcalc.divergence
+        vq_lev = interplevel(vq, pre, 400).mean(dim = 'Time') # has to be 2D array for mpcalc.divergence
+        qv_lev = interplevel(qv, pre, 400)
         
         # establish dx and dy values that follow the curvature of the earth
         lats = qv_lev.XLAT.values
@@ -237,20 +237,20 @@ def main(precip = True, mfc = True):
     if precip:
         # five years of raw data for control and experiment respectively
         ctl_02 = data_access('RAINNC', 7, 'd01', 'ctl')
-        # exp_02 = data_access('RAINNC', 7, 'd01', 'MODISImproved')
+        exp_02 = data_access('RAINNC', 7, 'd01', 'MODISImproved')
         
         # five year anom
-        pr_anom, ctl_mean, exp_mean = five_yr_anom('RAINNC', 7, 'd01')
+        # pr_anom, ctl_mean, exp_mean = five_yr_anom('RAINNC', 7, 'd01')
         # pr_anomaly = plot_anom(pr_anom, 'Anomaly of Five Year Precip Average', '%', 'MPL_BrBG')
-        five_year = plot_anom(ctl_mean, 'Five Year Precipitation  Average', 'mm/ 6 hr', 'MPL_PuBuGn')
+        # five_year = plot_anom(ctl_mean, 'Five Year Precipitation  Average', 'mm/ 6 hr', 'MPL_PuBuGn')
         
         
         for index, year in enumerate(range(2016, 2021)):
-            yearly_map = plot_anom(ctl_02[index], f'{year} Precipitation', 'mm/ 6 hrs', 'MPL_PuBuGn')
+            # yearly_map = plot_anom(ctl_02[index], f'{year} Precipitation', 'mm/ 6 hrs', 'MPL_PuBuGn')
             
             # find the anomaly from experiment to control for that given year
-            # pr_anom = exp_02[index] / ctl_02[index] * 100
-            # pr_map = plot_anom(pr_anom, f'{year} Precip Anomalies', '%', 'MPL_BrBG')
+            pr_anom = exp_02[index] - ctl_02[index]
+            pr_map = plot_anom(pr_anom, f'{year} Precip Anomalies', 'mm / 6hr', 'MPL_BrBG')
             
             # find anomaly from given year to five year control average
             # anom_from_ctl_mean = ctl_02[index] / ctl_mean * 100
@@ -261,12 +261,15 @@ def main(precip = True, mfc = True):
             # from_exp_mean_map = plot_anom(anom_from_exp_mean, f'{year} from Five Year Average - Experiemtn Precip', '%', 'MPL_BrBG')
     
     if mfc:
-        # ctl = test_mfc('d01', 7, 'ctl')
+        ctl = test_mfc('d01', 7, 'ctl')
+       
+       
+       
         exp = test_mfc('d01', 7, 'MODISImproved')
         
-        # combine_ctl = xr.concat(ctl, dim = 'Years')
-        # ctl_coords = {'XLAT': combine_ctl.XLAT.isel(Years = 0), 'XLONG': combine_ctl.XLONG.isel(Years = 0)}
-        # ctl_mean =  combine_ctl.mean(dim = 'Years').assign_coords(ctl_coords)
+        combine_ctl = xr.concat(ctl, dim = 'Years')
+        ctl_coords = {'XLAT': combine_ctl.XLAT.isel(Years = 0), 'XLONG': combine_ctl.XLONG.isel(Years = 0)}
+        ctl_mean =  combine_ctl.mean(dim = 'Years').assign_coords(ctl_coords)
         # five_year_mfc = plot_anom(ctl_mean, 'Five Year MFC Average', 'g kg-1 s-1', 'posneg_2')
         
         
@@ -288,3 +291,4 @@ if __name__ == '__main__':
     
     
     
+# %%
