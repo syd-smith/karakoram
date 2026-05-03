@@ -17,7 +17,7 @@ from netCDF4 import Dataset
 import numpy as np
 from pathlib import Path
 import sys
-from wrf import (getvar, ALL_TIMES, interplevel)
+from wrf import (getvar, ALL_TIMES, interplevel, latlon_coords)
 import xarray as xr
 
 
@@ -101,50 +101,6 @@ def five_yr_anom(variable, month, domain):
     return anom, ctl_mean, exp_mean
 
 
-def plot_anom(anomaly, title, colorbar_label, color):
-    
-    fig = plt.figure(figsize = (10, 10))
-    ax = plt.axes(projection = ccrs.PlateCarree())
-    
-    # create a red box to show bounds of the inner most domain (d03)
-    open_bounds = Dataset('/uufs/chpc.utah.edu/common/home/strong-group7/husile/karakoram/model_result/wrfout_MODISImproved/2016/wrfout_d03_2016-06-08_00:00:00')
-    area_bounds = getvar(open_bounds, 'RAINNC', timeidx=ALL_TIMES)
-    min_long = float(area_bounds['XLONG'].values.min())
-    max_long = float(area_bounds['XLONG'].values.max())
-    min_lat = float(area_bounds['XLAT'].values.min())
-    max_lat = float(area_bounds['XLAT'].values.max())
-    
-    # define width and height of box
-    width = max_long - min_long
-    height = max_lat - min_lat
-    
-    # create rectangle
-    rect = patches.Rectangle((min_long, min_lat), width, height, 
-                             linewidth = 4, edgecolor = 'red', facecolor = 'none', 
-                             label = 'D03 Bounds', zorder = 5)
-    # apply red box to map
-    ax.add_patch(rect)
-    
-    # define min and max values in the dataset
-    anom_min = anomaly.min().values
-    anom_max = anomaly.max().values
-    
-    # normalize range of values for the colorbar
-    if colorbar_label == '%':
-        norm = mcolors.TwoSlopeNorm(vmin = 50, vcenter = 100, vmax = 250)
-    elif anom_min < 0 < anom_max:
-        norm = mcolors.TwoSlopeNorm(vmin = anom_min, vcenter = 0, vmax = anom_max) 
-    else:
-        norm = mcolors.Normalize(vmin = anom_min, vmax = anom_max)
-
-    # map data and create colorbar
-    mapp = ax.contourf(anomaly.XLONG, anomaly.XLAT, anomaly.values, transform = ccrs.PlateCarree(), cmap = cmap.cmap(color), extend = 'both', levels = 20, norm = norm)
-    plt.colorbar(mapp, ax = ax, orientation = 'horizontal', label = colorbar_label, extend = 'both', pad = 0.03)
-    
-    # add title to top of map
-    plt.title(title)
-    
-
 def mfc_control(domain, month):
     """
     Computes moisture flex convergence by defining advection and convergence
@@ -215,9 +171,9 @@ def test_mfc(domain, month, experiment):
         vq = qv * va
         
         # interpolate data to 350 hPa level
-        uq_lev = interplevel(uq, pre, 400).mean(dim = 'Time') # has to be 2D array for mpcalc.divergence
-        vq_lev = interplevel(vq, pre, 400).mean(dim = 'Time') # has to be 2D array for mpcalc.divergence
-        qv_lev = interplevel(qv, pre, 400)
+        uq_lev = interplevel(uq, pre, 450).mean(dim = 'Time') # has to be 2D array for mpcalc.divergence
+        vq_lev = interplevel(vq, pre, 450).mean(dim = 'Time') # has to be 2D array for mpcalc.divergence
+        qv_lev = interplevel(qv, pre, 450)
         
         # establish dx and dy values that follow the curvature of the earth
         lats = qv_lev.XLAT.values
@@ -232,6 +188,86 @@ def test_mfc(domain, month, experiment):
     return five_year_data
 
 
+def plot_anom(data, title, colorbar_label, color, elevation = False):
+    
+    fig = plt.figure(figsize = (10, 10))
+    ax = plt.axes(projection = ccrs.PlateCarree())
+    
+    # create a red box to show bounds of the inner most domain (d03)
+    open_bounds = Dataset('/uufs/chpc.utah.edu/common/home/strong-group7/husile/karakoram/model_result/wrfout_MODISImproved/2016/wrfout_d03_2016-06-08_00:00:00')
+    area_bounds = getvar(open_bounds, 'RAINNC', timeidx=ALL_TIMES)
+    min_long = float(area_bounds['XLONG'].values.min())
+    max_long = float(area_bounds['XLONG'].values.max())
+    min_lat = float(area_bounds['XLAT'].values.min())
+    max_lat = float(area_bounds['XLAT'].values.max())
+    
+    # define width and height of box
+    width = max_long - min_long
+    height = max_lat - min_lat
+    
+    # create rectangle
+    rect = patches.Rectangle((min_long, min_lat), width, height, 
+                             linewidth = 4, edgecolor = 'red', facecolor = 'none', 
+                             label = 'D03 Bounds', zorder = 5)
+    # apply red box to map
+    ax.add_patch(rect)
+    
+    # define min and max values in the dataset
+    anom_min = data.min().values
+    anom_max = data.max().values
+    
+    # normalize range of values for the colorbar
+    if colorbar_label == '%':
+        norm = mcolors.TwoSlopeNorm(vmin = 0, vcenter = 100, vmax = 200)
+    elif colorbar_label == 'W m-2':
+        norm = mcolors.TwoSlopeNorm(vmin = -80, vcenter = 0, vmax = 200)
+    elif anom_min < 0 < anom_max:
+        norm = mcolors.TwoSlopeNorm(vmin = anom_min, vcenter = 0, vmax = anom_max) 
+    else:
+        norm = mcolors.Normalize(vmin = anom_min, vmax = anom_max)
+
+    # map data and create colorbar
+    mapp = ax.contourf(data.XLONG, data.XLAT, data.values, transform = ccrs.PlateCarree(), cmap = cmap.cmap(color), extend = 'both', levels = 20, norm = norm)
+    plt.colorbar(mapp, ax = ax, orientation = 'horizontal', label = colorbar_label, extend = 'both', pad = 0.03)
+    
+    if elevation:
+        open_elevation = Dataset('/uufs/chpc.utah.edu/common/home/strong-group7/husile/karakoram/model_result/wrfout_MODISImproved/2016/wrfout_d01_2016-06-08_00:00:00')
+        elevation_data = getvar(open_elevation, 'ter')
+        lat, lon = latlon_coords(elevation_data)
+        # set elevation bands to appear every 500 meters
+        levels = np.arange(0, 8500, 500)
+        # plot elevation bands
+        elevations = ax.contour(lon, lat, elevation_data, levels = levels, colors = 'black', linewidths = 0.25, transform = ccrs.PlateCarree())
+        # add labels
+        plt.clabel(elevations, inline = True, fontsize = 5, fmt = '%i', colors = 'black')
+
+    # add title to top of map
+    plt.title(title)
+
+    return plt
+
+# %%
+
+# ctl = test_mfc('d01', 7, 'ctl')
+# exp = test_mfc('d01', 7, 'MODISImproved')
+# mfc_yearly = plot_anom(exp[0]-ctl[0], '2017 Moisture Flux Convergence Anomaly at 450 hPa', 'g kg-1 s-1', 'posneg_2', elevation = True)
+
+# latent = data_access('LH', 7, 'd01', 'ctl') # in w m-2
+# latent_exp = data_access('LH', 7, 'd01', 'MODISImproved') # in w m-2
+sensible = data_access('HFX', 7, 'd01', 'ctl') # in w m-2
+sensible_exp = data_access('HFX', 7, 'd01', 'MODISImproved') # in w m-2
+
+# %%
+for index, year in enumerate(range(2016, 2021)):
+    sensible_map = plot_anom(sensible[index], f'{year} Sensible Heat Control', 'W m-2', 'posneg_2', elevation = True)
+    sensible_map.savefig(current_file_directory / f'sensible/july/{year}_d01_ctl.png')
+    sensible_map_exp = plot_anom(sensible_exp[index], f'{year} Sensible Heat Experiment', 'W m-2', 'posneg_2', elevation = True)
+    sensible_map_exp.savefig(current_file_directory / f'sensible/july/{year}_d01_exp.png')
+# sensible_anom = plot_anom(sensible_exp[0]-sensible[0], '2016 Sensible Heat Anomaly', 'W m-2', 'posneg_2', elevation = True)
+
+
+
+# %%
 def main(precip = True, mfc = True):
     
     if precip:
@@ -262,9 +298,6 @@ def main(precip = True, mfc = True):
     
     if mfc:
         ctl = test_mfc('d01', 7, 'ctl')
-       
-       
-       
         exp = test_mfc('d01', 7, 'MODISImproved')
         
         combine_ctl = xr.concat(ctl, dim = 'Years')
@@ -284,11 +317,7 @@ def main(precip = True, mfc = True):
             # anom_data = (exp[index] - ctl[index])
             # mfc_anom = plot_anom(anom_data, f'{year} MFC Anomaly at 350 hPa', 'as difference', 'posneg_2')
     
-if __name__ == '__main__':
-    main(precip = False)
+# if __name__ == '__main__':
+#     main(precip = False)
 
-
-    
-    
-    
 # %%
