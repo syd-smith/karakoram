@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# %%
 """
 Created on Sat Mar 28 17:42:51 2026
 
@@ -51,7 +52,7 @@ test = getvar(ctl_list_d02, 'RAINC', timeidx=ALL_TIMES)
 ctl_pr_d02 = getvar(ctl_list_d02, 'RAINNC', timeidx=ALL_TIMES) + getvar(ctl_list_d02, 'RAINC', timeidx=ALL_TIMES)
 exp_pr_d02 = getvar(exp_list_d02, 'RAINNC', timeidx=ALL_TIMES) + getvar(exp_list_d02, 'RAINC', timeidx=ALL_TIMES)
 
-#%%
+
 def backward_diff_time(dataarray):
     forward_diff = dataarray.diff(dim='Time')
     first_timestep = dataarray.isel(Time=0) * 0
@@ -111,3 +112,5 @@ plt.ylabel('Latitude')
 
 
 
+
+# %%

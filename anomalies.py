@@ -7,6 +7,7 @@ Created on Thu Apr  2 09:06:36 2026
 """
 #%%
 import cartopy.crs as ccrs
+import copy 
 import glob
 import matplotlib.colors as mcolors
 import matplotlib.patches as patches
@@ -30,6 +31,7 @@ current_file_directory = Path(__file__).resolve().parent
 # parent_directory = current_file_directory.parent
 sys.path.append(str(current_file_directory))
 
+
 import from_savanna.nclcmaps as cmap
 
 
@@ -47,6 +49,8 @@ def data_access(variable, month, domain, experiment):
                 start_position = sorted(glob.glob(path + f'wrfout_{domain}_{year}-06-30_18:00:00'))
             elif month == 6:
                 start_position = sorted(glob.glob(path + f'wrfout_{domain}_{year}-05-31_18:00:00'))
+            else:
+                print('Select a valid summer month.')
             
             # create a list with all control experiment files and open them
             collect_files = start_position + sorted(glob.glob(path + f'wrfout_{domain}_{year}-0{month}*'))
@@ -188,7 +192,7 @@ def test_mfc(domain, month, experiment):
     return five_year_data
 
 
-def plot_anom(data, title, colorbar_label, color, elevation = False):
+def plot_anom(data, title, colorbar_label, color, domain, elevation = False):
     
     fig = plt.figure(figsize = (10, 10))
     ax = plt.axes(projection = ccrs.PlateCarree())
@@ -218,7 +222,7 @@ def plot_anom(data, title, colorbar_label, color, elevation = False):
     
     # normalize range of values for the colorbar
     if colorbar_label == '%':
-        norm = mcolors.TwoSlopeNorm(vmin = 0, vcenter = 100, vmax = 200)
+        norm = mcolors.TwoSlopeNorm(vmin = 0, vcenter = 100, vmax = 250)
     elif colorbar_label == 'W m-2':
         norm = mcolors.TwoSlopeNorm(vmin = -80, vcenter = 0, vmax = 200)
     elif anom_min < 0 < anom_max:
@@ -226,12 +230,16 @@ def plot_anom(data, title, colorbar_label, color, elevation = False):
     else:
         norm = mcolors.Normalize(vmin = anom_min, vmax = anom_max)
 
+    # set nans to white
+    my_cmap = copy.copy(cmap.cmap(color)) # Copy the colormap
+    my_cmap.set_bad('white')
+
     # map data and create colorbar
-    mapp = ax.contourf(data.XLONG, data.XLAT, data.values, transform = ccrs.PlateCarree(), cmap = cmap.cmap(color), extend = 'both', levels = 20, norm = norm)
+    mapp = ax.contourf(data.XLONG, data.XLAT, data.values, transform = ccrs.PlateCarree(), cmap = my_cmap, extend = 'both', levels = 20, norm = norm)
     plt.colorbar(mapp, ax = ax, orientation = 'horizontal', label = colorbar_label, extend = 'both', pad = 0.03)
     
     if elevation:
-        open_elevation = Dataset('/uufs/chpc.utah.edu/common/home/strong-group7/husile/karakoram/model_result/wrfout_MODISImproved/2016/wrfout_d01_2016-06-08_00:00:00')
+        open_elevation = Dataset(f'/uufs/chpc.utah.edu/common/home/strong-group7/husile/karakoram/model_result/wrfout_MODISImproved/2016/wrfout_{domain}_2016-06-08_00:00:00')
         elevation_data = getvar(open_elevation, 'ter')
         lat, lon = latlon_coords(elevation_data)
         # set elevation bands to appear every 500 meters
@@ -248,26 +256,54 @@ def plot_anom(data, title, colorbar_label, color, elevation = False):
 
 # %%
 
-# ctl = test_mfc('d01', 7, 'ctl')
-# exp = test_mfc('d01', 7, 'MODISImproved')
-# mfc_yearly = plot_anom(exp[0]-ctl[0], '2017 Moisture Flux Convergence Anomaly at 450 hPa', 'g kg-1 s-1', 'posneg_2', elevation = True)
+ctl_d01 = data_access('RAINNC', 7, 'd01', 'ctl')
+exp_d01 = data_access('RAINNC', 7, 'd01', 'MODISImproved')
 
-# latent = data_access('LH', 7, 'd01', 'ctl') # in w m-2
-# latent_exp = data_access('LH', 7, 'd01', 'MODISImproved') # in w m-2
-sensible = data_access('HFX', 7, 'd01', 'ctl') # in w m-2
-sensible_exp = data_access('HFX', 7, 'd01', 'MODISImproved') # in w m-2
+# %%
+
+# precip_2016_anom = plot_anom((exp[0]/ctl[0])*100, '2016 Precipitation Anomaly', '%', 'MPL_BrBG', 'd02', elevation = True)
+# precip_2016_ctl = plot_anom(ctl[0], '2016 Precipitation - Control', 'mm/ 6 hours', 'MPL_PuBuGn', 'd02', elevation = True)
+# precip_2016_exp = plot_anom(exp[0], '2016 Precipitation - Experiment', 'mm/ 6 hours', 'MPL_PuBuGn', 'd02', elevation = True)
+
+anom = (exp_d01[0]/ctl_d01[0])*100
+precip_2016_anom = plot_anom(anom, '2016 Precipitation Anomaly', '%', 'MPL_BrBG', 'd01', elevation = True)
+# precip_2016_ctl = plot_anom(ctl_d01[0], '2016 Precipitation - Control', 'mm/ 6 hours', 'MPL_PuBuGn', 'd01', elevation = True)
+# precip_2016_ctl = plot_anom(exp_d01[0], '2016 Precipitation - Experiment', 'mm/ 6 hours', 'MPL_PuBuGn', 'd01', elevation = True)
+
+
+
+
+
+
+
+
+# %%
+
+# precip_2018_ctl = plot_anom(ctl[2], '2018 Precipitation - Control', 'mm/ 6 hours', 'MPL_PuBuGn', elevation = True)
+# precip_2018_exp = plot_anom(exp[2], '2018 Precipitation - Experiment', 'mm/ 6 hours', 'MPL_PuBuGn', elevation = True)
+anom = (exp[0] - ctl[0])
+precip_2018_anom = plot_anom(anom, '2018 Precipitation Anomaly', 'anom', 'MPL_BrBG', elevation = True)
+
+# %%
+
+latent = data_access('LH', 7, 'd02', 'ctl') # in w m-2
+latent_exp = data_access('LH', 7, 'd02', 'MODISImproved') # in w m-2
+# sensible = data_access('HFX', 7, 'd02', 'ctl') # in w m-2
+# sensible_exp = data_access('HFX', 7, 'd02', 'MODISImproved') # in w m-2
 
 # %%
 for index, year in enumerate(range(2016, 2021)):
-    sensible_map = plot_anom(sensible[index], f'{year} Sensible Heat Control', 'W m-2', 'posneg_2', elevation = True)
-    sensible_map.savefig(current_file_directory / f'sensible/july/{year}_d01_ctl.png')
-    sensible_map_exp = plot_anom(sensible_exp[index], f'{year} Sensible Heat Experiment', 'W m-2', 'posneg_2', elevation = True)
-    sensible_map_exp.savefig(current_file_directory / f'sensible/july/{year}_d01_exp.png')
+    latent_map = plot_anom(latent[index], f'{year} Latent Heat Control', 'W m-2', 'posneg_2', 'd02', elevation = True)
+    latent_map.savefig(current_file_directory / f'latent_heat/july/{year}_d02_ctl.png')
+    # sensible_map_exp = plot_anom(sensible_exp[index], f'{year} Sensible Heat Experiment', 'W m-2', 'posneg_2', elevation = True)
+    # sensible_map_exp.savefig(current_file_directory / f'sensible/july/{year}_d01_exp.png')
 # sensible_anom = plot_anom(sensible_exp[0]-sensible[0], '2016 Sensible Heat Anomaly', 'W m-2', 'posneg_2', elevation = True)
 
 
 
 # %%
+
+
 def main(precip = True, mfc = True):
     
     if precip:
