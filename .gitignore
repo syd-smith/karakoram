@@ -1,4 +1,5 @@
-*.png
+old_figs
 *.zip
 *00:00
 wrfout*
+from_court/*.png

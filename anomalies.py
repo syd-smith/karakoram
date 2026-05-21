@@ -280,8 +280,8 @@ def plot_anom(data, title, colorbar_label, color, domain, elevation = False):
     return plt
 
 
-ctl = test_mfc('d02', 7, 'ctl')
-exp = test_mfc('d02', 7, 'noise')
+# ctl = test_mfc('d02', 7, 'ctl')
+# exp = test_mfc('d02', 7, 'noise')
 
 
 
