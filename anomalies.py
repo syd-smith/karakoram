@@ -280,42 +280,44 @@ def plot_anom(data, title, colorbar_label, color, domain, elevation = False):
     return plt
 
 
+ctl = test_mfc('d02', 7, 'ctl')
+exp = test_mfc('d02', 7, 'noise')
 
 
 
-# %%
-# termini experiment precip data
-anom_term, ctl_term_mean, exp_term_mean, ctl_term, exp_term = five_yr_anom('RAINNC', 7, 'd02', 'MODISImproved')
-anom_term_1, ctl_term_1_mean, exp_term_1_mean, ctl_term_1, exp_term_1 = five_yr_anom('RAINNC', 7, 'd01', 'MODISImproved')
+# # %%
+# # termini experiment precip data
+# anom_term, ctl_term_mean, exp_term_mean, ctl_term, exp_term = five_yr_anom('RAINNC', 7, 'd02', 'MODISImproved')
+# anom_term_1, ctl_term_1_mean, exp_term_1_mean, ctl_term_1, exp_term_1 = five_yr_anom('RAINNC', 7, 'd01', 'MODISImproved')
 
-# noise experiment precip data
-anom_noise, ctl_noise_mean, exp_noise_mean, ctl_noise, exp_noise = five_yr_anom('RAINNC', 7, 'd02', 'noise')
-anom_noise_1, ctl_noise_1_mean, exp_noise_1_mean, ctl_noise_1, exp_noise_1 = five_yr_anom('RAINNC', 7, 'd01', 'noise')
+# # noise experiment precip data
+# anom_noise, ctl_noise_mean, exp_noise_mean, ctl_noise, exp_noise = five_yr_anom('RAINNC', 7, 'd02', 'noise')
+# anom_noise_1, ctl_noise_1_mean, exp_noise_1_mean, ctl_noise_1, exp_noise_1 = five_yr_anom('RAINNC', 7, 'd01', 'noise')
 
-# %%
-# domain 2 four year (2016-2019) precip anomaly 
-d02_term_anomaly = plot_anom(anom_term, 'Anomaly of Four Year Precip Average', '%', 'MPL_BrBG', 'd02', elevation = True)
-d02_noise_anomaly = plot_anom(anom_noise, 'Anomaly of Four Year Precip Average', '%', 'MPL_BrBG', 'd02', elevation = True)
-# %%
-d01_term_anomaly = plot_anom(exp_term_1_mean - ctl_term_1_mean, 'Anomaly of Four Year Precip Average', 'mm / 6 hours', 'MPL_BrBG', 'd01', elevation = True)
-d01_noise_anomaly = plot_anom(exp_noise_1_mean - ctl_noise_1_mean, 'Anomaly of Four Year Precip Average', 'mm / 6 hours', 'MPL_BrBG', 'd01', elevation = True)
+# # %%
+# # domain 2 four year (2016-2019) precip anomaly 
+# d02_term_anomaly = plot_anom(anom_term, 'Anomaly of Four Year Precip Average', '%', 'MPL_BrBG', 'd02', elevation = True)
+# d02_noise_anomaly = plot_anom(anom_noise, 'Anomaly of Four Year Precip Average', '%', 'MPL_BrBG', 'd02', elevation = True)
+# # %%
+# d01_term_anomaly = plot_anom(exp_term_1_mean - ctl_term_1_mean, 'Anomaly of Four Year Precip Average', 'mm / 6 hours', 'MPL_BrBG', 'd01', elevation = True)
+# d01_noise_anomaly = plot_anom(exp_noise_1_mean - ctl_noise_1_mean, 'Anomaly of Four Year Precip Average', 'mm / 6 hours', 'MPL_BrBG', 'd01', elevation = True)
 
 
-# %%
-# domain 1 2016 precip anomaly
-precip_2016_anom = plot_anom((exp_noise_1[0]-ctl_noise_1[0]), '2016 Precipitation Anomaly', 'mm/ 6 hours', 'MPL_BrBG', 'd01', elevation = True)
+# # %%
+# # domain 1 2016 precip anomaly
+# precip_2016_anom = plot_anom((exp_noise_1[0]-ctl_noise_1[0]), '2016 Precipitation Anomaly', 'mm/ 6 hours', 'MPL_BrBG', 'd01', elevation = True)
 
-# domain 2 raw data
-precip_2016_ctl = plot_anom(ctl_noise[0], '2016 Precipitation - Control', 'mm/ 6 hours', 'MPL_PuBuGn', 'd02', elevation = True)
-precip_2016_exp = plot_anom(exp_noise[0], '2016 Precipitation - Noise Experiment', 'mm/ 6 hours', 'MPL_PuBuGn', 'd02', elevation = True)
-precip_2016_term = plot_anom(exp_term[0], '2016 Precipitation - Termini Experiment', 'mm/ 6 hours', 'MPL_PuBuGn', 'd02', elevation = True)
+# # domain 2 raw data
+# precip_2016_ctl = plot_anom(ctl_noise[0], '2016 Precipitation - Control', 'mm/ 6 hours', 'MPL_PuBuGn', 'd02', elevation = True)
+# precip_2016_exp = plot_anom(exp_noise[0], '2016 Precipitation - Noise Experiment', 'mm/ 6 hours', 'MPL_PuBuGn', 'd02', elevation = True)
+# precip_2016_term = plot_anom(exp_term[0], '2016 Precipitation - Termini Experiment', 'mm/ 6 hours', 'MPL_PuBuGn', 'd02', elevation = True)
 
-# %%
+# # %%
 
-anom = (exp_d01[0]/ctl_d01[0])*100
-precip_2016_anom = plot_anom(anom, '2016 Precipitation Anomaly', '%', 'MPL_BrBG', 'd01', elevation = True)
-# precip_2016_ctl = plot_anom(ctl_d01[0], '2016 Precipitation - Control', 'mm/ 6 hours', 'MPL_PuBuGn', 'd01', elevation = True)
-# precip_2016_ctl = plot_anom(exp_d01[0], '2016 Precipitation - Experiment', 'mm/ 6 hours', 'MPL_PuBuGn', 'd01', elevation = True)
+# anom = (exp_d01[0]/ctl_d01[0])*100
+# precip_2016_anom = plot_anom(anom, '2016 Precipitation Anomaly', '%', 'MPL_BrBG', 'd01', elevation = True)
+# # precip_2016_ctl = plot_anom(ctl_d01[0], '2016 Precipitation - Control', 'mm/ 6 hours', 'MPL_PuBuGn', 'd01', elevation = True)
+# # precip_2016_ctl = plot_anom(exp_d01[0], '2016 Precipitation - Experiment', 'mm/ 6 hours', 'MPL_PuBuGn', 'd01', elevation = True)
 
 
 
