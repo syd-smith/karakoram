@@ -142,5 +142,4 @@ for year, idx in zip(range(2016, 2021), range(0,4)):
 
 # calculate five year average of transect for each experiment
 # take anomalies
-
 # %%

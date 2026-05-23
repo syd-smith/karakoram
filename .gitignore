@@ -2,4 +2,14 @@ old_figs
 *.zip
 *00:00
 wrfout*
-from_court/*.png
+from_court/JJ
+from_court/june
+from_court/july
+wrfout
+test_run/wrfout/*
+wrfruns/wps_k2/*
+
+wrfruns/wrf_TSKnoise_20*/*
+!wrfruns/wrf_TSKnoise_20*/run/run_wrf.csh
+!wrfruns/wrf_TSKnoise_20*/run/namelist.input
+!wrfruns/wrf_TSKnoise_20*/run/noise_perturbation.py
