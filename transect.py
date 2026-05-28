@@ -33,6 +33,8 @@ def load_variables(experiment):
     return qvapor, ua, va, ht
 
 noise_qvapor, noise_ua, noise_va, noise_ht = load_variables('noise')
+ctl_qvapor, ctl_ua, ctl_va, ctl_ht = load_variables('ctl')
+exp_qvapor, exp_ua, exp_va, exp_ht = load_variables('MODISImproved')
 
 # %%
 def WVT(year, qvapor, ua, va, ht, experiment):
@@ -95,7 +97,7 @@ def WVT(year, qvapor, ua, va, ht, experiment):
     WVT = q * (perpendicular_wind)
 
     # pull openfiles data to feed to vertcross
-    path = current_file_directory / f'wrfout_{experiment}/2016/'
+    path = current_file_directory / 'wrfout' / f'wrfout_{experiment}/2016/'
     collect_files = sorted(glob.glob(str(path / f'wrfout_d01_2016-07*')))
     open_files = [Dataset(file) for file in collect_files]
 
@@ -104,22 +106,53 @@ def WVT(year, qvapor, ua, va, ht, experiment):
     return cross_section
 
 
-for year, idx in zip(range(2016, 2021), range(0,4)):
+noise_all = []
+exp_all = []
+ctl_all = []
+
+for year, idx in zip(range(2016, 2020), range(0,3)):
+
+    wvt_noise = WVT(year, noise_qvapor, noise_ua, noise_va, noise_ht, 'noise')
+    noise_all.append(wvt_noise)
+    wvt_exp = WVT(year, exp_qvapor, exp_ua, exp_va, exp_ht, 'MODISImproved')
+    exp_all.append(wvt_exp)
+    wvt_ctl = WVT(year, ctl_qvapor, ctl_ua, ctl_va, ctl_ht, 'ctl')
+    ctl_all.append(wvt_ctl)
+
+# %%
+# combine all netcdf files in ctl into one 
+combine_ctl = xr.concat(ctl_all, dim = 'Years')
+# add coordinates back to the file
+ctl_coords = {'XLAT': ctl_all[0].XLAT, 'XLONG': ctl_all[0].XLONG}
+# find the five year average
+ctl_mean =  combine_ctl.mean(dim = 'Years').assign_coords(ctl_coords)
+
+# %%
+for year, idx in zip(range(2016, 2020), range(0,3)):
 
     # calulate WVT for given year
-    wvt = WVT(idx, noise_qvapor, noise_ua, noise_va, noise_ht, 'noise')
+    wvt_noise = WVT(idx, noise_qvapor, noise_ua, noise_va, noise_ht, 'noise')
+    wvt_ctl = WVT(idx, ctl_qvapor, ctl_ua, ctl_va, ctl_ht, 'ctl')
+    wvt_anom = wvt_noise - wvt_ctl
 
     # plot WVT transect
     fig = plt.figure(figsize = (12, 6))
     ax = plt.axes()
 
+    # set nan values to black
+    ax = plt.gca()
+    ax.set_facecolor('black')
+
+    # set norm so colorbar centers on color transition
     norm = mcolors.TwoSlopeNorm(vmin = -0.01, vcenter = 0, vmax = 0.05)
-    zvals = wvt['vertical'][0:39]
-    x_vals = np.arange(wvt.shape[1])
+
+    # restrict cross section to show up to 12000 m
+    zvals = wvt_anom['vertical'][0:39]
+    x_vals = np.arange(wvt_anom.shape[1])
 
     # Plot the cross-section data
     # to_np converts the xarray back to a numpy array for plotting
-    wvt_contours = ax.contourf(x_vals, zvals, to_np(wvt.sel(vertical = slice(0, 12000))), cmap = cmap.cmap("MPL_BrBG"), norm = norm)
+    wvt_contours = ax.contourf(x_vals, zvals, to_np(wvt_anom.sel(vertical = slice(0, 12000))), cmap = cmap.cmap("MPL_BrBG"), norm = norm, extend = 'both')
 
     # add y values that reflect the height in meters
     yvals = np.arange(0, 12000, 1000)
@@ -132,10 +165,10 @@ for year, idx in zip(range(2016, 2021), range(0,4)):
     ax.set_xticklabels([])
 
     # add colorbar
-    plt.colorbar(wvt_contours, ax = ax, label = 'WVT (kg/m/s)')
+    plt.colorbar(wvt_contours, ax = ax, label = 'WVT (kg/m/s)', extend = 'both')
 
     # add title
-    plt.title(f'{year} WVT from 35N, 72.5E to 33N, 76E - Noise')
+    plt.title(f'{year} WVT Anomaly from 35N, 72.5E to 33N, 76E - Noise')
     plt.show()
     # plt.savefig()
 

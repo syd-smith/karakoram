@@ -1,24 +1,19 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
-Created on Thu Apr  2 09:06:36 2026
+Author: Sydney Smith
+Created: April 2, 2026
+"""
 
-@author: u1301408
-"""
-#%%
+# %%
 import cartopy.crs as ccrs
 import copy 
-import glob
 import matplotlib.colors as mcolors
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt
-import metpy.calc as mpcalc
-from metpy.units import units
 from netCDF4 import Dataset
 import numpy as np
 from pathlib import Path
 import sys
-from wrf import (getvar, ALL_TIMES, interplevel, latlon_coords)
+from wrf import (getvar, ALL_TIMES, latlon_coords)
 import xarray as xr
 
 
@@ -26,169 +21,66 @@ import xarray as xr
 # - Establish Relative File Path - 
 # ==================================
 
-current_file_directory = Path(__file__).resolve().parent
+try:
+    current_file_directory = Path(__file__).resolve().parent
+except NameError:
+    current_file_directory = Path().resolve().parent
 # parent_directory = current_file_directory.parent
 sys.path.append(str(current_file_directory))
 
 import from_savanna.nclcmaps as cmap
+from data_access import get_data, get_mfc, five_yr_anom
 
 
-def data_access(variable, month, domain, experiment):
-    # termini experiment = MODISIMPROVED
-    five_year_data = []
-    
-    for year in range(2016, 2020):
-        path = current_file_directory / f'wrfout_{experiment}/{year}/'
-          
-        # if data for given variable accumulates in a "continuously rising staircase" and thus has to be differenced to finnd raw value
-        if variable in ['Total Pr', 'RAINC', 'RAINNC']:
-            # define starting positions for differencing
-            if month == 7:
-                start_position = sorted(glob.glob(str(path / f'wrfout_{domain}_{year}-06-30_18:00:00')))
-            elif month == 6:
-                start_position = sorted(glob.glob(str(path / f'wrfout_{domain}_{year}-05-31_18:00:00')))
-            else:
-                print('Select a valid summer month.')
-            
-            # create a list with all control experiment files and open them
-            collect_files = start_position + sorted(glob.glob(str(path / f'wrfout_{domain}_{year}-0{month}*')))
-            open_files = [Dataset(file) for file in collect_files]
-            
-            # find hourly precipitation vales (data essentially creating a staircase so you have to difference values from the previous timestamp to current)
-            if variable == 'Total Pr':
-                accumulated = getvar(open_files, 'RAINNC', timeidx = ALL_TIMES) + getvar(open_files, 'RAINC', timeidx = ALL_TIMES)
-            else:
-                accumulated = getvar(open_files, variable, timeidx = ALL_TIMES)
-                
-            hourly = accumulated.diff(dim = 'Time') # find precip rate for the 6 hour period
-            five_year_data.append(hourly.mean(dim = 'Time')) # compute an average precip rate for the given month 
-            
-        # if data for given variable is provided as an instantaneous result at that timestamp
-        else:
-            # create a list with all control experiment files and open them
-            collect_files = sorted(glob.glob(str(path / f'wrfout_{domain}_{year}-0{month}*')))
-            open_files = [Dataset(file) for file in collect_files]
-            
-            # compile control data into one netcdf
-            instantaneous = getvar(open_files, variable, timeidx = ALL_TIMES)
-            # take the monthly average
-            five_year_data.append(instantaneous.mean(dim = 'Time')) # append file to list to access outside of the loop
+# ==============
+# - Constants -
+# ==============
 
-    return five_year_data
+# call noise experiment WVT data for May, June, July
+may_wvt_noise_anom_d01, may_wvt_ctl_mean_d01, may_wvt_noise_mean_d01, may_wvt_ctl_d01, may_wvt_noise_d01 = five_yr_anom('WVT', 5, 'd01', 'noise')
+june_wvt_noise_anom_d01, june_wvt_ctl_mean_d01, june_wvt_noise_mean_d01, june_wvt_ctl_d01, june_wvt_noise_d01 = five_yr_anom('WVT', 6, 'd01', 'noise')
+july_wvt_noise_anom_d01, july_wvt_ctl_mean_d01, july_wvt_noise_mean_d01, july_wvt_ctl_d01, july_wvt_noise_d01 = five_yr_anom('WVT', 7, 'd01', 'noise')
+print('Finished WVT noise d01')
+
+# call termini experiment precipitation data for May, June, July
+may_wvt_exp_anom_d01, may_wvt_ctl_mean_d01, may_wvt_exp_mean_d01, may_wvt_ctl_d01, may_wvt_exp_d01 = five_yr_anom('WVT', 5, 'd01', 'MODISImproved')
+june_wvt_exp_anom_d01, june_wvt_ctl_mean_d01, june_wvt_exp_mean_d01, june_wvt_ctl_d01, june_wvt_exp_d01 = five_yr_anom('WVT', 6, 'd01', 'MODISImproved')
+july_wvt_exp_anom_d01, july_wvt_ctl_mean_d01, july_wvt_exp_mean_d01, july_wvt_ctl_d01, july_wvt_exp_d01 = five_yr_anom('WVT', 7, 'd01', 'MODISImproved')
+print('Finished WVT exp d01')
+
+# call d01 noise experiment precipitation data for May, June, July
+may_pr_noise_anom_d01, may_pr_ctl_mean_d01, may_pr_noise_mean_d01, may_pr_ctl_d01, may_pr_noise_d01 = five_yr_anom('RAINNC', 5, 'd01', 'noise')
+june_pr_noise_anom_d01, june_pr_ctl_mean_d01, june_pr_noise_mean_d01, june_pr_ctl_d01, june_pr_noise_d01 = five_yr_anom('RAINNC', 6, 'd01', 'noise')
+july_pr_noise_anom_d01, july_pr_ctl_mean_d01, july_pr_noise_mean_d01, july_pr_ctl_d01, july_pr_noise_d01 = five_yr_anom('RAINNC', 7, 'd01', 'noise')
+print('Finished pr noise d01')
+
+# call d02 noise experiment precipitation data for May, June, July
+may_pr_noise_anom_d02, may_pr_ctl_mean_d02, may_pr_noise_mean_d02, may_pr_ctl_d02, may_pr_noise_d02 = five_yr_anom('RAINNC', 5, 'd02', 'noise')
+june_pr_noise_anom_d02, june_pr_ctl_mean_d02, june_pr_noise_mean_d02, june_pr_ctl_d02, june_pr_noise_d02 = five_yr_anom('RAINNC', 6, 'd02', 'noise')
+july_pr_noise_anom_d02, july_pr_ctl_mean_d02, july_pr_noise_mean_d02, july_pr_ctl_d02, july_pr_noise_d02 = five_yr_anom('RAINNC', 7, 'd02', 'noise')
+print('Finished pr noise d02')
+
+# call d01 termini experiment precipitation data for May, June, July
+may_pr_exp_anom_d01, may_pr_ctl_mean_d01, may_pr_exp_mean_d01, may_pr_ctl_d01, may_pr_exp_d01 = five_yr_anom('RAINNC', 5, 'd01', 'MODISImproved')
+june_pr_exp_anom_d01, june_pr_ctl_mean_d01, june_pr_exp_mean_d01, june_pr_ctl_d01, june_pr_exp_d01 = five_yr_anom('RAINNC', 6, 'd01', 'MODISImproved')
+july_pr_exp_anom_d01, july_pr_ctl_mean_d01, july_pr_exp_mean_d01, july_pr_ctl_d01, july_pr_exp_d01 = five_yr_anom('RAINNC', 7, 'd01', 'MODISImproved')
+print('Finished pr exp d01')
+
+# call d02 termini experiment precipitation data for May, June, July
+may_pr_exp_anom_d02, may_pr_ctl_mean_d02, may_pr_exp_mean_d02, may_pr_ctl_d02, may_pr_exp_d02 = five_yr_anom('RAINNC', 5, 'd02', 'MODISImproved')
+june_pr_exp_anom_d02, june_pr_ctl_mean_d02, june_pr_exp_mean_d02, june_pr_ctl_d02, june_pr_exp_d02 = five_yr_anom('RAINNC', 6, 'd02', 'MODISImproved')
+july_pr_exp_anom_d02, july_pr_ctl_mean_d02, july_pr_exp_mean_d02, july_pr_ctl_d02, july_pr_exp_d02 = five_yr_anom('RAINNC', 7, 'd02', 'MODISImproved')
+print('Finished pr exp d02')
 
 
-def five_yr_anom(variable, month, domain, experiment):
-    
-    # call five years worth of data from each experiment
-    ctl = data_access(variable, month, domain, 'ctl')
-    exp = data_access(variable, month, domain, experiment)
- 
-    # combine all netcdf files in ctl into one 
-    combine_ctl = xr.concat(ctl, dim = 'Years')
-    # add coordinates back to the file
-    ctl_coords = {'XLAT': ctl[0].XLAT, 'XLONG': ctl[0].XLONG}
-    # find the five year average
-    ctl_mean =  combine_ctl.mean(dim = 'Years').assign_coords(ctl_coords)
-
-    # combine all netcddf files in exp into one
-    combine_exp = xr.concat(exp, dim = 'Years')
-    # add coordinates back to the file
-    exp_coords = {'XLAT': exp[0].XLAT, 'XLONG': exp[0].XLONG}
-    # find the five year average
-    exp_mean =  combine_exp.mean(dim = 'Years').assign_coords(exp_coords)
-
-    # compute the anomaly as a percent
-    anom = (exp_mean / ctl_mean) * 100
-    
-    return anom, ctl_mean, exp_mean, ctl, exp
 
 
-def mfc_control(domain, month):
-    """
-    Computes moisture flex convergence by defining advection and convergence
-    separately and the combining. np.gradient does not take into consideration
-    the spherical nature of the Earth but rather computes dx and dy as a flat
-    surface."""
-    
-    ctl = []
-    for year in range(2016, 2021):
-        # fie path for data
-        ctl_path = f'/uufs/chpc.utah.edu/common/home/strong-group7/husile/karakoram/model_result/wrfout_ctl/{year}/'
-        
-        # add all files to a list and open them
-        ctl_collect_files = sorted(glob.glob(ctl_path + f'wrfout_{domain}*0{month}*'))
-        ctl_open_files = [Dataset(file) for file in ctl_collect_files]
-        
-        # get all raw variables
-        ctl_q = getvar(ctl_open_files, 'QVAPOR', timeidx = ALL_TIMES)*1e3
-        ctl_ua = getvar(ctl_open_files, 'ua', timeidx = ALL_TIMES)
-        ctl_va = getvar(ctl_open_files, 'va', timeidx = ALL_TIMES)
-        ctl_p = getvar(ctl_open_files, 'pressure', timeidx = ALL_TIMES)
-        
-        # interpolate data only to 350 hPa level
-        ctl_q_350 = interplevel(ctl_q, ctl_p, 350.0) 
-        ctl_ua_350 = interplevel(ctl_ua, ctl_p, 350.0)
-        ctl_va_350 = interplevel(ctl_va, ctl_p, 350.0)
-        
-        # get grid spacing
-        dx = ctl_open_files[0].DX
-        dy = ctl_open_files[0].DY
-        
-        dq_dx = np.gradient(ctl_q_350, dx, axis = -1)
-        dq_dy = np.gradient(ctl_q_350, dy, axis = -2)
-        
-        du_dx = np.gradient(ctl_ua_350, dx, axis = -1)
-        dv_dy = np.gradient(ctl_va_350, dy, axis = -2)
-        
-        advection = -(ctl_ua_350 * dq_dx + ctl_va_350 * dq_dy)
-        convergence = -ctl_q_350 * (du_dx + dv_dy)
-        moisture_flux_convergence = (advection + convergence).mean(dim = 'Time')
-        
-        ctl.append(moisture_flux_convergence)
-        
-    return ctl
 
 
-def test_mfc(domain, month, experiment):
-    five_year_data = []
-    for year in range(2016, 2020):
-        # control
-        path = current_file_directory / f'wrfout_{experiment}/{year}/'
-
-        # list and open all files in the proper directory as netcdf
-        collect_files = sorted(glob.glob(str(path / f'wrfout_{domain}*0{month}*')))
-        open_files = [Dataset(file) for file in collect_files]
-        
-        # open and select for moisture and wind variables
-        qv_raw = getvar(open_files, 'QVAPOR', timeidx = ALL_TIMES) # kg/kg
-        ua = getvar(open_files, 'ua', timeidx = ALL_TIMES, units = 'm s-1')
-        va = getvar(open_files, 'va', timeidx = ALL_TIMES, units = 'm s-1')
-        pre = getvar(open_files, 'pressure', timeidx = ALL_TIMES)
-        
-        # convert moisture to g/kg
-        qv = qv_raw.metpy.quantify().metpy.convert_units('g/kg')
-        
-        # combine moisture and wind components
-        uq = qv * ua
-        vq = qv * va
-        
-        # interpolate data to 350 hPa level
-        uq_lev = interplevel(uq, pre, 450).mean(dim = 'Time') # has to be 2D array for mpcalc.divergence
-        vq_lev = interplevel(vq, pre, 450).mean(dim = 'Time') # has to be 2D array for mpcalc.divergence
-        qv_lev = interplevel(qv, pre, 450)
-        
-        # establish dx and dy values that follow the curvature of the earth
-        lats = qv_lev.XLAT.values
-        lons = qv_lev.XLONG.values
-        dx, dy = mpcalc.lat_lon_grid_deltas(lons, lats)
-        # returns divergence as positive values
-        div = mpcalc.divergence(uq_lev, vq_lev, dx = dx, dy = dy)
-        
-        # converts divergence to negative values
-        five_year_data.append(-1 * div)
-        
-    return five_year_data
-
+# %%
+# ==============
+# - Functions - 
+# ==============
 
 def plot_anom(data, title, colorbar_label, color, domain, elevation = False):
     
@@ -196,8 +88,8 @@ def plot_anom(data, title, colorbar_label, color, domain, elevation = False):
     ax = plt.axes(projection = ccrs.PlateCarree())
     
     # create a red box to show bounds of the inner most domain (d03)
-    open_bounds = Dataset('/uufs/chpc.utah.edu/common/home/strong-group7/husile/karakoram/model_result/wrfout_MODISImproved/2016/wrfout_d03_2016-06-08_00:00:00')
-    area_bounds = getvar(open_bounds, 'RAINNC', timeidx=ALL_TIMES)
+    open_bounds = Dataset(current_file_directory / 'wrfout/wrfout_ctl/2016/wrfout_d03_2016-06-08_00:00:00')
+    area_bounds = getvar(open_bounds, 'RAINNC', timeidx = ALL_TIMES)
     min_long = float(area_bounds['XLONG'].values.min())
     max_long = float(area_bounds['XLONG'].values.max())
     min_lat = float(area_bounds['XLAT'].values.min())
@@ -281,11 +173,10 @@ def plot_anom(data, title, colorbar_label, color, domain, elevation = False):
 
 
 # ctl = test_mfc('d02', 7, 'ctl')
-# exp = test_mfc('d02', 7, 'noise')
+# exp = test_mfc('d02', 7, 'MODISImproved')
+# noise = test_mfc('d02', 7, 'noise')
 
 
-
-# # %%
 # # termini experiment precip data
 # anom_term, ctl_term_mean, exp_term_mean, ctl_term, exp_term = five_yr_anom('RAINNC', 7, 'd02', 'MODISImproved')
 # anom_term_1, ctl_term_1_mean, exp_term_1_mean, ctl_term_1, exp_term_1 = five_yr_anom('RAINNC', 7, 'd01', 'MODISImproved')
