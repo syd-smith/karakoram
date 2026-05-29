@@ -5,11 +5,13 @@ Created: May 27, 2026
 """
 
 # %%
+import dask
 import glob
 import metpy.calc as mpcalc
 from metpy.units import units
 from netCDF4 import Dataset
 import numpy as np
+import pandas as pd
 from pathlib import Path
 import sys
 from wrf import (getvar, ALL_TIMES, interplevel)
@@ -32,6 +34,42 @@ sys.path.append(str(current_file_directory))
 # - Functions - 
 # ==============
 
+experiment = 'MODISImproved'
+years = range(2016, 2021)
+domain = 'd01'
+all_years = []
+
+for year in years:  
+    path = current_file_directory / 'wrfout' / f'wrfout_{experiment}/{year}/'
+    collect_files = sorted(glob.glob(str(path / f'wrfout_{domain}_{year}*')))
+    all_years.extend(collect_files)
+
+# open_files = [Dataset(file) for file in all_years]
+ds = xr.open_mfdataset(all_years, combine='nested', concat_dim='Time')
+print('Dataset opened!')
+
+wrf_times = ds['Times'].values
+time_strings = ["".join(t.astype(str)).strip().replace('_', ' ') for t in wrf_times]
+
+# 3. Convert to Pandas, then FORCE cast it to a NumPy datetime64 nanosecond array
+proper_timestamps = np.array(pd.to_datetime(time_strings), dtype='datetime64[ns]')
+
+# 4. Overwrite the Time coordinate
+ds = ds.assign_coords(Time=proper_timestamps)
+print('Timestamps assigned to dataset!')
+
+variables_to_keep = ['XLAT', 'XLONG', 'T2', 'RAINNC', 'RAINC', 'QVAPOR', 'U', 'V', 'P', 'PB', 'PH', 'PHB', 'TSK']
+
+ds_subset = ds[variables_to_keep]
+
+# 2. Save just the subset with compression
+encoding_dict = {var: {"zlib": True, "complevel": 4} for var in ds_subset.data_vars}
+ds_subset.to_netcdf(
+    "wrfout_exp.nc", encoding=encoding_dict, compute=True
+)
+print("Subset saved successfully!")
+
+# %%
 def get_data(variable, month, domain, experiment):
 
     """
@@ -205,9 +243,10 @@ def WVT(year, qvapor, ua, va, ht, experiment):
     WVT = q * (perpendicular_wind)
 
     # pull openfiles data to feed to vertcross
-    path = current_file_directory / 'wrfout' / f'wrfout_{experiment}/2016/'
-    collect_files = sorted(glob.glob(str(path / f'wrfout_d01_2016-07*')))
-    open_files = [Dataset(file) for file in collect_files]
+    # path = current_file_directory / 'wrfout' / f'wrfout_{experiment}/2016/'
+    # collect_files = sorted(glob.glob(str(path / f'wrfout_d01_2016-07*')))
+    # open_files = [Dataset(file) for file in collect_files]
+    # use savedd netcdf instead
 
     cross_section = vertcross(WVT, ht[year], wrfin = open_files, start_point = start, end_point = stop, latlon = True, autolevels = 100)
 

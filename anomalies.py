@@ -6,6 +6,7 @@ Created: April 2, 2026
 # %%
 import cartopy.crs as ccrs
 import copy 
+import glob
 import matplotlib.colors as mcolors
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt
@@ -13,9 +14,9 @@ from netCDF4 import Dataset
 import numpy as np
 from pathlib import Path
 import sys
-from wrf import (getvar, ALL_TIMES, latlon_coords)
+from wrf import (ALL_TIMES, getvar, latlon_coords, WrfDataset)
 import xarray as xr
-
+# %%
 
 # ==================================
 # - Establish Relative File Path - 
@@ -29,12 +30,88 @@ except NameError:
 sys.path.append(str(current_file_directory))
 
 import from_savanna.nclcmaps as cmap
-from data_access import get_data, get_mfc, five_yr_anom
 
 
 # ==============
 # - Constants -
 # ==============
+
+target_file = current_file_directory / 'wrfout_noise.nc'
+
+print("Opening original file...")
+# The 'with' context manager guarantees the file handle is locked, read, and completely closed
+with xr.open_dataset(target_file) as ds_original:
+    # .copy(deep=True) severs all memory links and file pointers to the disk
+    ds = ds_original.copy(deep=True)
+
+print("File closed. Modifying data in memory...")
+# 2. Safely drop ONLY the non-dimensional scalar 'Time' variable causing the crash
+if 'Time' in ds.variables and 'Time' not in ds.dims:
+    print("Found conflicting scalar 'Time' variable. Dropping it...")
+    ds = ds.drop_vars('Time')
+
+print("Saving modified copy back to disk...")
+# Now that Python has completely released the read-lock, mode='w' will work perfectly
+clean_file = current_file_directory / 'wrfout_noise_clean.nc'
+ds.to_netcdf(clean_file, mode = 'w', format='NETCDF4')
+print("Done! The file on your disk is now clean.")
+
+
+
+
+# %%
+
+experiment = 'noise'
+variable = 'RAINNC'
+month = 7
+
+# access underlying netCDF4.Dataset object sitting behind xarray cause this is what getvar is looking for
+getvar_digestible = Dataset(current_file_directory / f'wrfout_{experiment}.nc')
+
+if 'Time' in getvar_digestible.variables and getvar_digestible.variables['Time'].ndim == 0:
+    del getvar_digestible.variables['Time']
+
+five_year_data = []
+    
+for year in range(2016, 2021):
+    path = current_file_directory / f'wrfout_{experiment}.nc'
+          
+    # if data for given variable accumulates in a "continuously rising staircase" and thus has to be differenced to finnd raw value
+    if variable in ['Total Pr', 'RAINC', 'RAINNC']:
+        # define starting positions for differencing
+        if month == 7:
+            start_position = f'{year}-06-30_18:00:00'
+        elif month == 6:
+            start_position = f'{year}-05-31_18'
+        elif month == 5:
+            start_position = f'{year}-04-31_18'
+        else:
+            print('Select a valid summer month.')
+            
+        # find hourly precipitation vales (data essentially creating a staircase so you have to difference values from the previous timestamp to current)
+        if variable == 'Total Pr':
+            accumulated = getvar(getvar_digestible, 'RAINNC', timeidx = ALL_TIMES) + getvar(getvar_digestible, 'RAINC', timeidx = ALL_TIMES)
+        else:
+            accumulated = getvar(getvar_digestible, variable, timeidx = ALL_TIMES)
+                
+        select_month = accumulated.sel(Time = slice(start_position, f'{year}-0{month}'))
+
+        hourly = select_month.diff(dim = 'Time') # find precip rate for the 6 hour period
+        five_year_data.append(hourly.mean(dim = 'Time')) # compute an average precip rate for the given month 
+            
+    # if data for given variable is provided as an instantaneous result at that timestamp
+    else:
+            
+        # compile control data into one netcdf
+        instantaneous = getvar(getvar_digestible, variable, timeidx = ALL_TIMES)
+
+        select_month = instantaneous.sel(Time = f'{year}-0{month}')
+
+        # take the monthly average
+        five_year_data.append(select_month.mean(dim = 'Time')) # append file to list to access outside of the loop
+
+
+# %%
 
 # call noise experiment WVT data for May, June, July
 may_wvt_noise_anom_d01, may_wvt_ctl_mean_d01, may_wvt_noise_mean_d01, may_wvt_ctl_d01, may_wvt_noise_d01 = five_yr_anom('WVT', 5, 'd01', 'noise')

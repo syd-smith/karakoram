@@ -1,0 +1,5 @@
+The following modules were not unloaded:
+  (Use "module --force purge" to unload all):
+
+  1) chpc/1.0
+/uufs/kingspeak.peaks/sys/var/slurm/slurmd.spool/kp336//job23587034/slurm_script: line 17: source: /uufs/chpc.utah.edu/common/home/strong-group7/sydney/miniforge3_envs/karakoram: is a directory
