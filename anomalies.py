@@ -7,16 +7,19 @@ Created: April 2, 2026
 import cartopy.crs as ccrs
 import copy 
 import glob
+import matplotlib as mpl
 import matplotlib.colors as mcolors
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from netCDF4 import Dataset
 import numpy as np
 from pathlib import Path
 import sys
-from wrf import (ALL_TIMES, getvar, latlon_coords, WrfDataset)
+from wrf import (ALL_TIMES, getvar, latlon_coords)
 import xarray as xr
-# %%
+
 
 # ==================================
 # - Establish Relative File Path - 
@@ -30,134 +33,143 @@ except NameError:
 sys.path.append(str(current_file_directory))
 
 import from_savanna.nclcmaps as cmap
+from data_access import five_yr_anom
 
 
 # ==============
 # - Constants -
 # ==============
 
-target_file = current_file_directory / 'wrfout_noise.nc'
-
-print("Opening original file...")
-# The 'with' context manager guarantees the file handle is locked, read, and completely closed
-with xr.open_dataset(target_file) as ds_original:
-    # .copy(deep=True) severs all memory links and file pointers to the disk
-    ds = ds_original.copy(deep=True)
-
-print("File closed. Modifying data in memory...")
-# 2. Safely drop ONLY the non-dimensional scalar 'Time' variable causing the crash
-if 'Time' in ds.variables and 'Time' not in ds.dims:
-    print("Found conflicting scalar 'Time' variable. Dropping it...")
-    ds = ds.drop_vars('Time')
-
-print("Saving modified copy back to disk...")
-# Now that Python has completely released the read-lock, mode='w' will work perfectly
-clean_file = current_file_directory / 'wrfout_noise_clean.nc'
-ds.to_netcdf(clean_file, mode = 'w', format='NETCDF4')
-print("Done! The file on your disk is now clean.")
-
-
-
-
-# %%
-
-experiment = 'noise'
-variable = 'RAINNC'
-month = 7
-
-# access underlying netCDF4.Dataset object sitting behind xarray cause this is what getvar is looking for
-getvar_digestible = Dataset(current_file_directory / f'wrfout_{experiment}.nc')
-
-if 'Time' in getvar_digestible.variables and getvar_digestible.variables['Time'].ndim == 0:
-    del getvar_digestible.variables['Time']
-
-five_year_data = []
-    
-for year in range(2016, 2021):
-    path = current_file_directory / f'wrfout_{experiment}.nc'
-          
-    # if data for given variable accumulates in a "continuously rising staircase" and thus has to be differenced to finnd raw value
-    if variable in ['Total Pr', 'RAINC', 'RAINNC']:
-        # define starting positions for differencing
-        if month == 7:
-            start_position = f'{year}-06-30_18:00:00'
-        elif month == 6:
-            start_position = f'{year}-05-31_18'
-        elif month == 5:
-            start_position = f'{year}-04-31_18'
-        else:
-            print('Select a valid summer month.')
-            
-        # find hourly precipitation vales (data essentially creating a staircase so you have to difference values from the previous timestamp to current)
-        if variable == 'Total Pr':
-            accumulated = getvar(getvar_digestible, 'RAINNC', timeidx = ALL_TIMES) + getvar(getvar_digestible, 'RAINC', timeidx = ALL_TIMES)
-        else:
-            accumulated = getvar(getvar_digestible, variable, timeidx = ALL_TIMES)
-                
-        select_month = accumulated.sel(Time = slice(start_position, f'{year}-0{month}'))
-
-        hourly = select_month.diff(dim = 'Time') # find precip rate for the 6 hour period
-        five_year_data.append(hourly.mean(dim = 'Time')) # compute an average precip rate for the given month 
-            
-    # if data for given variable is provided as an instantaneous result at that timestamp
-    else:
-            
-        # compile control data into one netcdf
-        instantaneous = getvar(getvar_digestible, variable, timeidx = ALL_TIMES)
-
-        select_month = instantaneous.sel(Time = f'{year}-0{month}')
-
-        # take the monthly average
-        five_year_data.append(select_month.mean(dim = 'Time')) # append file to list to access outside of the loop
-
-
-# %%
-
-# call noise experiment WVT data for May, June, July
-may_wvt_noise_anom_d01, may_wvt_ctl_mean_d01, may_wvt_noise_mean_d01, may_wvt_ctl_d01, may_wvt_noise_d01 = five_yr_anom('WVT', 5, 'd01', 'noise')
-june_wvt_noise_anom_d01, june_wvt_ctl_mean_d01, june_wvt_noise_mean_d01, june_wvt_ctl_d01, june_wvt_noise_d01 = five_yr_anom('WVT', 6, 'd01', 'noise')
-july_wvt_noise_anom_d01, july_wvt_ctl_mean_d01, july_wvt_noise_mean_d01, july_wvt_ctl_d01, july_wvt_noise_d01 = five_yr_anom('WVT', 7, 'd01', 'noise')
-print('Finished WVT noise d01')
-
-# call termini experiment precipitation data for May, June, July
-may_wvt_exp_anom_d01, may_wvt_ctl_mean_d01, may_wvt_exp_mean_d01, may_wvt_ctl_d01, may_wvt_exp_d01 = five_yr_anom('WVT', 5, 'd01', 'MODISImproved')
-june_wvt_exp_anom_d01, june_wvt_ctl_mean_d01, june_wvt_exp_mean_d01, june_wvt_ctl_d01, june_wvt_exp_d01 = five_yr_anom('WVT', 6, 'd01', 'MODISImproved')
-july_wvt_exp_anom_d01, july_wvt_ctl_mean_d01, july_wvt_exp_mean_d01, july_wvt_ctl_d01, july_wvt_exp_d01 = five_yr_anom('WVT', 7, 'd01', 'MODISImproved')
-print('Finished WVT exp d01')
-
-# call d01 noise experiment precipitation data for May, June, July
-may_pr_noise_anom_d01, may_pr_ctl_mean_d01, may_pr_noise_mean_d01, may_pr_ctl_d01, may_pr_noise_d01 = five_yr_anom('RAINNC', 5, 'd01', 'noise')
-june_pr_noise_anom_d01, june_pr_ctl_mean_d01, june_pr_noise_mean_d01, june_pr_ctl_d01, june_pr_noise_d01 = five_yr_anom('RAINNC', 6, 'd01', 'noise')
-july_pr_noise_anom_d01, july_pr_ctl_mean_d01, july_pr_noise_mean_d01, july_pr_ctl_d01, july_pr_noise_d01 = five_yr_anom('RAINNC', 7, 'd01', 'noise')
-print('Finished pr noise d01')
-
-# call d02 noise experiment precipitation data for May, June, July
-may_pr_noise_anom_d02, may_pr_ctl_mean_d02, may_pr_noise_mean_d02, may_pr_ctl_d02, may_pr_noise_d02 = five_yr_anom('RAINNC', 5, 'd02', 'noise')
-june_pr_noise_anom_d02, june_pr_ctl_mean_d02, june_pr_noise_mean_d02, june_pr_ctl_d02, june_pr_noise_d02 = five_yr_anom('RAINNC', 6, 'd02', 'noise')
-july_pr_noise_anom_d02, july_pr_ctl_mean_d02, july_pr_noise_mean_d02, july_pr_ctl_d02, july_pr_noise_d02 = five_yr_anom('RAINNC', 7, 'd02', 'noise')
-print('Finished pr noise d02')
-
-# call d01 termini experiment precipitation data for May, June, July
-may_pr_exp_anom_d01, may_pr_ctl_mean_d01, may_pr_exp_mean_d01, may_pr_ctl_d01, may_pr_exp_d01 = five_yr_anom('RAINNC', 5, 'd01', 'MODISImproved')
-june_pr_exp_anom_d01, june_pr_ctl_mean_d01, june_pr_exp_mean_d01, june_pr_ctl_d01, june_pr_exp_d01 = five_yr_anom('RAINNC', 6, 'd01', 'MODISImproved')
-july_pr_exp_anom_d01, july_pr_ctl_mean_d01, july_pr_exp_mean_d01, july_pr_ctl_d01, july_pr_exp_d01 = five_yr_anom('RAINNC', 7, 'd01', 'MODISImproved')
-print('Finished pr exp d01')
-
-# call d02 termini experiment precipitation data for May, June, July
-may_pr_exp_anom_d02, may_pr_ctl_mean_d02, may_pr_exp_mean_d02, may_pr_ctl_d02, may_pr_exp_d02 = five_yr_anom('RAINNC', 5, 'd02', 'MODISImproved')
-june_pr_exp_anom_d02, june_pr_ctl_mean_d02, june_pr_exp_mean_d02, june_pr_ctl_d02, june_pr_exp_d02 = five_yr_anom('RAINNC', 6, 'd02', 'MODISImproved')
-july_pr_exp_anom_d02, july_pr_ctl_mean_d02, july_pr_exp_mean_d02, july_pr_ctl_d02, july_pr_exp_d02 = five_yr_anom('RAINNC', 7, 'd02', 'MODISImproved')
-print('Finished pr exp d02')
 
 
 
 
 
 
+s
 # %%
 # ==============
 # - Functions - 
 # ==============
+
+def color_bar(var_min, var_center, var_max, color, location, axs):
+    """
+    Function to simply create a colorbar for maps. Note that this colorbar
+    won't be standardized using a scalar mappable to apply to multiple maps. 
+    """
+    
+    ticks = np.linspace(var_min, var_max, num = 10)
+    norm = mcolors.TwoSlopeNorm(vmin = var_min, vcenter = var_center, vmax = var_max)
+
+    # create a scalar mappable as a standin for contour so the colorbar remains standardized across different maps
+    sm = mpl.cm.ScalarMappable(norm = norm, cmap = color)
+    sm.set_array([]) # makes sure no data is attached to the colorbar
+    
+    # specify the layout of the colorbar
+    cbar = plt.colorbar(sm, ax = axs, orientation = 'vertical', pad = 0.015, aspect = 50, extend = 'both', ticks = ticks, location = location)
+    cbar.ax.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.0f'))
+    cbar.ax.tick_params(labelsize = 30)
+    
+    return cbar
+
+def future_change_fig(variable, month, domain, experiment):
+    """
+    Function used to create 
+    """
+
+    # call data from five_yr_anom function
+    anom, ctl_mean, exp_mean, ctl_raw, exp_raw = five_yr_anom(variable, month, domain, experiment)
+
+    fig, axs = plt.subplots(nrows = 2, ncols = 3, subplot_kw = {'projection': ccrs.PlateCarree()}, figsize = (3, 9))
+    
+    labels_one = ['a.', 'b.', 'c.']
+    labels_two = ['d.', 'e.', 'f.']
+    labels_three = ['g.', 'h.', 'i.']
+    
+    # loop for pecip anomalies on the top row
+    for idx, model in range(0,2):
+        # define levels
+        pr_levels  = np.array([-75, -60, -45, -30, -15, 0, 50, 100, 150, 200, 250])
+        ts_levels = np.linspace(0, 15, 15)
+        huss_levels = np.linspace(0, 7, 8)
+        
+        # define norm values to standardize colorbar to map colors
+        pr_norm = mcolors.BoundaryNorm(pr_levels, ncolors = plt.get_cmap(cmap.cmap('MPL_BrBG'), 14).N) # 15 bins means 14 edges
+        ts_norm = mcolors.BoundaryNorm(ts_levels, ncolors = plt.get_cmap(cmap.cmap('MPL_YlOrRd'), 14).N) # 15 bins means 14 edges
+        huss_norm = mcolors.BoundaryNorm(huss_levels, ncolors = plt.get_cmap(cmap.cmap('MPL_BuGn'), 7).N) # 8 bins means 7 edges
+
+        # call contour function in specified ax location      
+        precip_maps = axs[0][i].contourf(anom[idx]['lon'], anom[idx]['lat'], pr_data.values, levels = pr_levels, norm = pr_norm, cmap = cmap.cmap('MPL_BrBG'), extend = 'both', transform = ccrs.PlateCarree())
+        temp_maps = axs[1][i].contourf(anom[idx]['lon'], anom[idx]['lat'], ts_data.values, levels = ts_levels, norm = ts_norm, cmap = cmap.cmap('MPL_YlOrRd'), extend = 'both', transform = ccrs.PlateCarree())
+        huss_maps = axs[2][i].contourf(anom[idx]['lon'], anom[idx]['lat'], huss_data.values, levels = huss_levels, norm = huss_norm, cmap = cmap.cmap('MPL_BuGn'), extend = 'both', transform = ccrs.PlateCarree())
+        
+        for ax in [axs[0, i], axs[1, i], axs[2, i]]:
+            ax.set_extent([-143, -67.5, 20, 44.5])
+            
+            # add features to each map
+            ax.coastlines(linewidth = 1.5,color = 'k')
+            
+            states = cfeature.NaturalEarthFeature(category = 'cultural', name = 'admin_1_states_provinces_lines', scale = '50m', facecolor = 'none', edgecolor = 'k')
+            countries = cfeature.NaturalEarthFeature(category = 'cultural', name = 'admin_0_boundary_lines_land', scale = '50m', facecolor = 'none', edgecolor = 'k')
+            lakes = cfeature.NaturalEarthFeature(category = 'physical', name = 'lakes', scale = '50m', facecolor = 'none', edgecolor = 'k')
+            
+            ax.add_feature(states, linewidth = 1.5)
+            ax.add_feature(countries, linewidth = 1.5)
+            ax.add_feature(lakes, linewidth = 1.5)
+            
+        axs[0][i].text(0.02, 0.89, labels_one[i], fontsize = 30, fontweight = 'bold', transform = axs[0][i].transAxes)
+        axs[1][i].text(0.02, 0.89, labels_two[i], fontsize = 30, fontweight = 'bold', transform = axs[1][i].transAxes)
+        axs[2][i].text(0.02, 0.89, labels_three[i], fontsize = 30, fontweight = 'bold', transform = axs[2][i].transAxes)
+    
+    # PRECIPITATION COLORBAR
+    # fine tuning control of colorbar size and placement
+    pr_axins = inset_axes(ax, width = '10%', height = '20%', loc = 'center right', bbox_to_anchor = (0.935, 0.08, 0.08, 1.5), bbox_transform = fig.transFigure, borderpad = 0)
+
+    # create a scalar mappable as a standin for contour so the colorbar remains standardized across different maps
+    pr_sm = mpl.cm.ScalarMappable(norm = pr_norm, cmap = cmap.cmap('MPL_BrBG'))
+    pr_sm.set_array([])
+    
+    #  colorbar function passed using the scalar mappable 
+    pr_cbar = fig.colorbar(pr_sm, cax = pr_axins, orientation = 'vertical', extend = 'both', ticks = pr_levels, boundaries = pr_levels, aspect = 50)
+    pr_cbar.ax.tick_params(labelsize = 20)
+    pr_cbar.ax.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.0f'))
+    
+    # TEMPERATURE COLORBAR
+    # fine tuning control of colorbar size and placement
+    ts_axins = inset_axes(ax, width = '10%', height = '20%', loc='center right', bbox_to_anchor = (0.935, -0.25, 0.08, 1.5), bbox_transform = fig.transFigure, borderpad = 0)
+
+    # create a scalar mappable as a standin for contour so the colorbar remains standardized across different maps
+    ts_sm = mpl.cm.ScalarMappable(norm = ts_norm, cmap =  cmap.cmap('MPL_YlOrRd'))
+    ts_sm.set_array([])
+    
+    #  colorbar function passed using the scalar mappable 
+    ts_cbar = fig.colorbar(ts_sm, cax = ts_axins, orientation = 'vertical', extend = 'both', ticks = [0, 2.5, 5, 7.5, 10, 12.5, 15], boundaries = ts_levels, aspect = 50)
+    ts_cbar.ax.tick_params(labelsize = 20)
+    ts_cbar.ax.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.0f'))
+    
+    # HUMIDITY COLORBAR
+    # fine tuning control of colorbar size and placement
+    huss_axins = inset_axes(ax, width = '10%', height = '20%', loc = 'center right', bbox_to_anchor = (0.935, -0.585, 0.08, 1.5), bbox_transform = fig.transFigure, borderpad = 0)
+
+    # create a scalar mappable as a standin for contour so the colorbar remains standardized across different maps
+    huss_sm = mpl.cm.ScalarMappable(norm = huss_norm, cmap = cmap.cmap('MPL_BuGn'))
+    huss_sm.set_array([])
+    
+    # colorbar function passed using the scalar mappable 
+    huss_cbar = fig.colorbar(huss_sm, cax = huss_axins, orientation = 'vertical', extend = 'both', ticks = huss_levels, boundaries = huss_levels, aspect = 50)
+    huss_cbar.ax.tick_params(labelsize = 20)
+    huss_cbar.ax.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.0f'))
+     
+    fig.text(-1.7, 3.35, 'Wet Case', transform = ax.transAxes, fontsize = 60, va = 'top', ha = 'left', bbox = dict(facecolor = 'white', pad  = 1, edgecolor = 'white'))
+    fig.text(-0.78, 3.35, 'Moderate Case', transform = ax.transAxes, fontsize = 60, va = 'top', ha = 'left', bbox = dict(facecolor = 'white', pad  = 1, edgecolor = 'white'))
+    fig.text(0.4, 3.35, 'Dry Case', transform = ax.transAxes, fontsize = 60, va = 'top', ha = 'left', bbox = dict(facecolor = 'white', pad  = 1, edgecolor = 'white'))
+    
+    if save:
+        # all PNGs stored to anomaly_maps directory but ignored in Git
+        save_path = current_file_directory.joinpath(save_name)
+        plt.savefig(save_path, dpi = 400)
+        
+    plt.show()
 
 def plot_anom(data, title, colorbar_label, color, domain, elevation = False):
     

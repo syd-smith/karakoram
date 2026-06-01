@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 import sys
-from wrf import (getvar, ALL_TIMES, interplevel)
+from wrf import (getvar, ALL_TIMES, interplevel, vertcross, CoordPair)
 import xarray as xr
 
 
@@ -34,42 +34,7 @@ sys.path.append(str(current_file_directory))
 # - Functions - 
 # ==============
 
-experiment = 'MODISImproved'
-years = range(2016, 2021)
-domain = 'd01'
-all_years = []
 
-for year in years:  
-    path = current_file_directory / 'wrfout' / f'wrfout_{experiment}/{year}/'
-    collect_files = sorted(glob.glob(str(path / f'wrfout_{domain}_{year}*')))
-    all_years.extend(collect_files)
-
-# open_files = [Dataset(file) for file in all_years]
-ds = xr.open_mfdataset(all_years, combine='nested', concat_dim='Time')
-print('Dataset opened!')
-
-wrf_times = ds['Times'].values
-time_strings = ["".join(t.astype(str)).strip().replace('_', ' ') for t in wrf_times]
-
-# 3. Convert to Pandas, then FORCE cast it to a NumPy datetime64 nanosecond array
-proper_timestamps = np.array(pd.to_datetime(time_strings), dtype='datetime64[ns]')
-
-# 4. Overwrite the Time coordinate
-ds = ds.assign_coords(Time=proper_timestamps)
-print('Timestamps assigned to dataset!')
-
-variables_to_keep = ['XLAT', 'XLONG', 'T2', 'RAINNC', 'RAINC', 'QVAPOR', 'U', 'V', 'P', 'PB', 'PH', 'PHB', 'TSK']
-
-ds_subset = ds[variables_to_keep]
-
-# 2. Save just the subset with compression
-encoding_dict = {var: {"zlib": True, "complevel": 4} for var in ds_subset.data_vars}
-ds_subset.to_netcdf(
-    "wrfout_exp.nc", encoding=encoding_dict, compute=True
-)
-print("Subset saved successfully!")
-
-# %%
 def get_data(variable, month, domain, experiment):
 
     """
@@ -243,10 +208,9 @@ def WVT(year, qvapor, ua, va, ht, experiment):
     WVT = q * (perpendicular_wind)
 
     # pull openfiles data to feed to vertcross
-    # path = current_file_directory / 'wrfout' / f'wrfout_{experiment}/2016/'
-    # collect_files = sorted(glob.glob(str(path / f'wrfout_d01_2016-07*')))
-    # open_files = [Dataset(file) for file in collect_files]
-    # use savedd netcdf instead
+    path = current_file_directory / 'wrfout' / f'wrfout_{experiment}/2016/'
+    collect_files = sorted(glob.glob(str(path / f'wrfout_d01_2016-07*')))
+    open_files = [Dataset(file) for file in collect_files]
 
     cross_section = vertcross(WVT, ht[year], wrfin = open_files, start_point = start, end_point = stop, latlon = True, autolevels = 100)
 
@@ -259,10 +223,13 @@ def five_yr_anom(variable, month, domain, experiment):
     Take five year data from get_data and calculate an anomaly
     """
     
+    # define years used in simulation
+    years = range(2016, 2021)
+
     if variable == 'mfc':
         # calls five years worth of moisture flux convergence data for control and experiment
-        ctl = get_mfc(month, domain, 'ctl')
-        exp = get_mfc(month, domain, experiment)   
+        ctl_list = get_mfc(month, domain, 'ctl')
+        exp_list = get_mfc(month, domain, experiment)   
 
     elif variable == 'WVT':
         # call all variables to pass into the WVT function for the control experiment calculation
@@ -270,45 +237,183 @@ def five_yr_anom(variable, month, domain, experiment):
         ctl_ua = get_data('ua', month, domain, experiment)
         ctl_va = get_data('va', month, domain, experiment)
         ctl_ht = get_data('z', month, domain, experiment)   
-        ctl = []
+        ctl_list = []
 
         # call all variables to pass into the WVT function for the experiment calculation
         exp_qvapor = get_data('QVAPOR', month, domain, experiment)
         exp_ua = get_data('ua', month, domain, experiment)
         exp_va = get_data('va', month, domain, experiment)
         exp_ht = get_data('z', month, domain, experiment)  
-        exp = []
+        exp_list = []
         
-        for year, idx in zip(range(2016, 2021), range(0,3)):
+        for idx in range(0,5):
             # calculate WVT for the experiment
-            wvt_exp = WVT(year, exp_qvapor, exp_ua, exp_va, exp_ht, experiment)
-            exp.append(wvt_exp)
+            wvt_exp = WVT(idx, exp_qvapor, exp_ua, exp_va, exp_ht, experiment)
+            exp_list.append(wvt_exp)
             # calculate WVT for the control experiment
-            wvt_ctl = WVT(year, ctl_qvapor, ctl_ua, ctl_va, ctl_ht, 'ctl')
-            ctl.append(wvt_ctl)     
+            wvt_ctl = WVT(idx, ctl_qvapor, ctl_ua, ctl_va, ctl_ht, 'ctl')
+            ctl_list.append(wvt_ctl)     
    
     else:
         # call five years worth of data from each experiment
-        ctl = get_data(variable, month, domain, 'ctl')
-        exp = get_data(variable, month, domain, experiment)
+        ctl_list = get_data(variable, month, domain, 'ctl')
+        exp_list = get_data(variable, month, domain, experiment)
  
-    # combine all netcdf files in ctl into one 
-    combine_ctl = xr.concat(ctl, dim = 'Years')
-    # add coordinates back to the file
-    ctl_coords = {'XLAT': ctl[0].XLAT, 'XLONG': ctl[0].XLONG}
-    # find the five year average
-    ctl_mean =  combine_ctl.mean(dim = 'Years').assign_coords(ctl_coords)
+    # save yearly data to xarray
+    ctl = xr.concat(ctl_list, dim = 'year').assign_coords(year = years)
+    exp = xr.concat(exp_list, dim = 'year').assign_coords(year = years)
 
-    # combine all netcdf files in exp into one
-    combine_exp = xr.concat(exp, dim = 'Years')
-    # add coordinates back to the file
-    exp_coords = {'XLAT': exp[0].XLAT, 'XLONG': exp[0].XLONG}
-    # find the five year average
-    exp_mean =  combine_exp.mean(dim = 'Years').assign_coords(exp_coords)
+    # take five year average
+    ctl_mean = ctl.mean(dim = 'year')
+    exp_mean =  exp.mean(dim = 'year')
 
     # compute the anomaly as a percent
     anom = exp_mean - ctl_mean
+
+    # save data to dataset
+    local_ds = xr.Dataset({
+        'ctl': ctl,
+        'exp': exp,
+        'ctl_mean': ctl_mean,
+        'exp_mean': exp_mean,
+        'anom': anom
+    })
     
-    return anom, ctl_mean, exp_mean, ctl, exp
+    return local_ds
 
 
+def main():
+    # dimensions to work through
+    months = [5, 6, 7]
+    experiments = ['noise', 'MODISImproved']
+    domains = ['d01', 'd02']
+
+    # pull WVT data only for d01
+    wvt_exps = []
+    for exp in experiments:
+        wvt_months = []
+        for month in months:
+            # Returns a dataset containing ctl, exp, ctl_mean, exp_mean, anom
+            wvt_months.append(five_yr_anom('WVT', month, 'd01', exp))
+        wvt_exps.append(xr.concat(wvt_months, dim = 'month').assign_coords(month = months))
+    # add both experiemtns to same dataarray
+    wvt_master = xr.concat(wvt_exps, dim = 'experiment').assign_coords(experiment = experiments)
+
+    # pull pr data for d01 and d02
+    pr_doms = []
+    for dom in domains:
+        pr_exps = []
+        for exp in experiments:
+            pr_months = []
+            for month in months:
+                pr_months.append(five_yr_anom('RAINNC', month, dom, exp))
+            pr_exps.append(xr.concat(pr_months, dim = 'month').assign_coords(month = months))
+        pr_doms.append(xr.concat(pr_exps, dim = 'experiment').assign_coords(experiment = experiments))
+    # pull all pr data together 
+    pr_master = xr.concat(pr_doms, dim='domain').assign_coords(domain=domains)
+    print("Finished Precipitation pipeline.")
+
+    # merge both variable workflows into a single consolidated master dataset
+    master_ds = xr.Dataset({
+    'WVT_metrics': wvt_master,   # This will keep its own dims (experiment, month, cross_line_idx, etc)
+    'RAINNC_metrics': pr_master  # This will retain (domain, experiment, month, south_north, west_east)
+})
+
+    encoding_dict = {var: {'zlib': True, 'complevel': 4} for var in master_ds.data_vars}
+    output_path = current_file_directory / 'wrf_analysis_output.nc'
+    
+    master_ds.to_netcdf(output_path, encoding = encoding_dict)
+    print(f"Success! Master layout written to: {output_path}")
+
+
+
+
+
+
+
+
+
+
+    # call noise experiment WVT data for May, June, July
+    may_wvt_noise_anom_d01, may_wvt_ctl_mean_d01, may_wvt_noise_mean_d01, may_wvt_ctl_d01, may_wvt_noise_d01 = five_yr_anom('WVT', 5, 'd01', 'noise')
+    june_wvt_noise_anom_d01, june_wvt_ctl_mean_d01, june_wvt_noise_mean_d01, june_wvt_ctl_d01, june_wvt_noise_d01 = five_yr_anom('WVT', 6, 'd01', 'noise')
+    july_wvt_noise_anom_d01, july_wvt_ctl_mean_d01, july_wvt_noise_mean_d01, july_wvt_ctl_d01, july_wvt_noise_d01 = five_yr_anom('WVT', 7, 'd01', 'noise')
+    print('Finished WVT noise d01')
+
+    # call termini experiment precipitation data for May, June, July
+    may_wvt_exp_anom_d01, may_wvt_ctl_mean_d01, may_wvt_exp_mean_d01, may_wvt_ctl_d01, may_wvt_exp_d01 = five_yr_anom('WVT', 5, 'd01', 'MODISImproved')
+    june_wvt_exp_anom_d01, june_wvt_ctl_mean_d01, june_wvt_exp_mean_d01, june_wvt_ctl_d01, june_wvt_exp_d01 = five_yr_anom('WVT', 6, 'd01', 'MODISImproved')
+    july_wvt_exp_anom_d01, july_wvt_ctl_mean_d01, july_wvt_exp_mean_d01, july_wvt_ctl_d01, july_wvt_exp_d01 = five_yr_anom('WVT', 7, 'd01', 'MODISImproved')
+    print('Finished WVT exp d01')
+
+    # call d01 noise experiment precipitation data for May, June, July
+    may_pr_noise_anom_d01, may_pr_ctl_mean_d01, may_pr_noise_mean_d01, may_pr_ctl_d01, may_pr_noise_d01 = five_yr_anom('RAINNC', 5, 'd01', 'noise')
+    june_pr_noise_anom_d01, june_pr_ctl_mean_d01, june_pr_noise_mean_d01, june_pr_ctl_d01, june_pr_noise_d01 = five_yr_anom('RAINNC', 6, 'd01', 'noise')
+    july_pr_noise_anom_d01, july_pr_ctl_mean_d01, july_pr_noise_mean_d01, july_pr_ctl_d01, july_pr_noise_d01 = five_yr_anom('RAINNC', 7, 'd01', 'noise')
+    print('Finished pr noise d01')
+
+    # call d02 noise experiment precipitation data for May, June, July
+    may_pr_noise_anom_d02, may_pr_ctl_mean_d02, may_pr_noise_mean_d02, may_pr_ctl_d02, may_pr_noise_d02 = five_yr_anom('RAINNC', 5, 'd02', 'noise')
+    june_pr_noise_anom_d02, june_pr_ctl_mean_d02, june_pr_noise_mean_d02, june_pr_ctl_d02, june_pr_noise_d02 = five_yr_anom('RAINNC', 6, 'd02', 'noise')
+    july_pr_noise_anom_d02, july_pr_ctl_mean_d02, july_pr_noise_mean_d02, july_pr_ctl_d02, july_pr_noise_d02 = five_yr_anom('RAINNC', 7, 'd02', 'noise')
+    print('Finished pr noise d02')
+
+    # call d01 termini experiment precipitation data for May, June, July
+    may_pr_exp_anom_d01, may_pr_ctl_mean_d01, may_pr_exp_mean_d01, may_pr_ctl_d01, may_pr_exp_d01 = five_yr_anom('RAINNC', 5, 'd01', 'MODISImproved')
+    june_pr_exp_anom_d01, june_pr_ctl_mean_d01, june_pr_exp_mean_d01, june_pr_ctl_d01, june_pr_exp_d01 = five_yr_anom('RAINNC', 6, 'd01', 'MODISImproved')
+    july_pr_exp_anom_d01, july_pr_ctl_mean_d01, july_pr_exp_mean_d01, july_pr_ctl_d01, july_pr_exp_d01 = five_yr_anom('RAINNC', 7, 'd01', 'MODISImproved')
+    print('Finished pr exp d01')
+
+    # call d02 termini experiment precipitation data for May, June, July
+    may_pr_exp_anom_d02, may_pr_ctl_mean_d02, may_pr_exp_mean_d02, may_pr_ctl_d02, may_pr_exp_d02 = five_yr_anom('RAINNC', 5, 'd02', 'MODISImproved')
+    june_pr_exp_anom_d02, june_pr_ctl_mean_d02, june_pr_exp_mean_d02, june_pr_ctl_d02, june_pr_exp_d02 = five_yr_anom('RAINNC', 6, 'd02', 'MODISImproved')
+    july_pr_exp_anom_d02, july_pr_ctl_mean_d02, july_pr_exp_mean_d02, july_pr_ctl_d02, july_pr_exp_d02 = five_yr_anom('RAINNC', 7, 'd02', 'MODISImproved')
+    print('Finished pr exp d02')
+
+
+    # --- 1. ORGANIZE WVT (Only on d01) ---
+    # Stack months for Noise
+    wvt_noise = xr.concat([may_wvt_noise_d01, june_wvt_noise_d01, july_wvt_noise_d01], dim='month')
+    # Stack months for MODISImproved
+    wvt_exp = xr.concat([may_wvt_exp_d01, june_wvt_exp_d01, july_wvt_exp_d01], dim='month')
+    # Stack months for Control (using the ones returned by your function)
+    wvt_ctl = xr.concat([may_wvt_ctl_d01, june_wvt_ctl_d01, july_wvt_ctl_d01], dim='month')
+
+    # Combine them into a single WVT array with an 'experiment' dimension
+    wvt_combined = xr.concat([wvt_ctl, wvt_noise, wvt_exp], dim='experiment')
+    wvt_combined = wvt_combined.assign_coords(
+        month=[5, 6, 7],
+        experiment=['control', 'noise', 'MODISImproved']
+    )
+
+    # --- 2. ORGANIZE RAINNC (On d01 and d02) ---
+    # Domain 1 Stack
+    pr_ctl_d01 = xr.concat([may_pr_ctl_d01, june_pr_ctl_d01, july_pr_ctl_d01], dim='month')
+    pr_noise_d01 = xr.concat([may_pr_noise_d01, june_pr_noise_d01, july_pr_noise_d01], dim='month')
+    pr_exp_d01 = xr.concat([may_pr_exp_d01, june_pr_exp_d01, july_pr_exp_d01], dim='month')
+    pr_d01 = xr.concat([pr_ctl_d01, pr_noise_d01, pr_exp_d01], dim='experiment')
+
+    # Domain 2 Stack
+    pr_ctl_d02 = xr.concat([may_pr_ctl_d02, june_pr_ctl_d02, july_pr_ctl_d02], dim='month')
+    pr_noise_d02 = xr.concat([may_pr_noise_d02, june_pr_noise_d02, july_pr_noise_d02], dim='month')
+    pr_exp_d02 = xr.concat([may_pr_exp_d02, june_pr_exp_d02, july_pr_exp_d02], dim='month')
+    pr_d02 = xr.concat([pr_ctl_d02, pr_noise_d02, pr_exp_d02], dim='experiment')
+
+    # Combine d01 and d02 along a new 'domain' dimension
+    pr_combined = xr.concat([pr_d01, pr_d02], dim='domain')
+    pr_combined = pr_combined.assign_coords(
+        month=[5, 6, 7],
+        experiment=['control', 'noise', 'MODISImproved'],
+        domain=['d01', 'd02']
+    )
+
+    # --- 3. SAVE EVERYTHING TO ONE FILE ---
+    master_ds = xr.Dataset({
+        'WVT': wvt_combined,
+        'RAINNC': pr_combined
+    })
+
+    # Save with standard compression
+    encoding = {var: {'zlib': True, 'complevel': 4} for var in master_ds.data_vars}
+    master_ds.to_netcdf('wrf_analysis_output.nc', encoding=encoding)
+    print("Saved everything into a single multi-dimensional NetCDF file!")

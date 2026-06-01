@@ -25,9 +25,9 @@ if __name__ == '__main__':
     sys.path.append(str(current_file_directory))
 
     # identify what data you want to compile
-    experiment = 'MODISImproved'
+    experiment = 'ctl'
     years = range(2016, 2021)
-    domain = 'd01'
+    domain = 'd02'
     all_years = []
 
     # collect data for each year from wrfout files
@@ -36,28 +36,29 @@ if __name__ == '__main__':
         collect_files = sorted(glob.glob(str(path / f'wrfout_{domain}_{year}*')))
         all_years.extend(collect_files)
 
-    # open_files = [Dataset(file) for file in all_years]
+    # open multi-file dataset
     ds = xr.open_mfdataset(all_years, combine = 'nested', concat_dim = 'Time')
     print(f'{experiment} dataset opened!')
 
+    # format timestamps
     wrf_times = ds['Times'].values
     time_strings = ["".join(t.astype(str)).strip().replace('_', ' ') for t in wrf_times]
 
-    # 3. Convert to Pandas, then FORCE cast it to a NumPy datetime64 nanosecond array
+    # convert to Pandas, then FORCE cast it to a NumPy datetime64 nanosecond array
     proper_timestamps = np.array(pd.to_datetime(time_strings), dtype = 'datetime64[ns]')
 
-    # 4. Overwrite the Time coordinate
-    ds = ds.assign_coords(Time = proper_timestamps)
+    # overwrite the Time coordinate
+    ds = ds.assign_coords(time_coord = ('Time', proper_timestamps))
     print('Timestamps assigned to dataset!')
 
-    variables_to_keep = ['XLAT', 'XLONG', 'T2', 'RAINNC', 'RAINC', 'QVAPOR', 'U', 'V', 'P', 'PB', 'PH', 'PHB', 'TSK']
-
+    # define variables to save
+    variables_to_keep = ['Times', 'XLAT', 'XLONG', 'T2', 'RAINNC', 'RAINC', 'QVAPOR', 'U', 'V', 'P', 'PB', 'PH', 'PHB', 'TSK']
     ds_subset = ds[variables_to_keep]
 
-    # 2. Save just the subset with compression
+    # save the subset of variables with compression
     encoding_dict = {var: {'zlib': True, 'complevel': 4} for var in ds_subset.data_vars}
-    fname = f'wrfout_{experiment}.nc'
-    ds_subset.to_netcdf(
-        fname, encoding = encoding_dict, compute = True
-    )
+    
+    # save data to fname
+    fname = f'wrfout_{experiment}_{domain}.nc'
+    ds_subset.to_netcdf(fname, encoding = encoding_dict, compute = True)
     print(f'Subset saved successfully to {fname}!')
