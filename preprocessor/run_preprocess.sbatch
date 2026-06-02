@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=ctl2   # Name showing up in squeue
+#SBATCH --job-name=make_netcdf   # Name showing up in squeue
 #SBATCH --account=strong-kp    	    # Court's node (kingspeak11)
 #SBATCH --partition=strong-kp
 #SBATCH --nodes=1                   # Single node is best for single script multi-threading
@@ -11,4 +11,4 @@
 set -e
 
 # run script in selected environment
-/uufs/chpc.utah.edu/common/home/strong-group7/sydney/miniforge3_envs/karakoram/bin/python get_netcdf.py
+/uufs/chpc.utah.edu/common/home/strong-group7/sydney/miniforge3_envs/karakoram/bin/python data_access.py

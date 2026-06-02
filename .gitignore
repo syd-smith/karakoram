@@ -8,6 +8,8 @@ from_court/july
 wrfout
 test_run/wrfout/*
 wrfruns/wps_k2/*
+.nc
+
 
 wrfruns/wrf_TSKnoise_20*/*
 !wrfruns/wrf_TSKnoise_20*/run/run_wrf.csh

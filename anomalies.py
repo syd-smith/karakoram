@@ -41,13 +41,6 @@ from data_access import five_yr_anom
 # ==============
 
 
-
-
-
-
-
-s
-# %%
 # ==============
 # - Functions - 
 # ==============
@@ -72,98 +65,110 @@ def color_bar(var_min, var_center, var_max, color, location, axs):
     
     return cbar
 
-def future_change_fig(variable, month, domain, experiment):
+
+def six_panel_fig(variable, month, domain, experiment, units, elevation = True, save_name = 'place holder', save = False):
     """
     Function used to create 
     """
 
-    # call data from five_yr_anom function
-    anom, ctl_mean, exp_mean, ctl_raw, exp_raw = five_yr_anom(variable, month, domain, experiment)
+    # define path for data call
+    path = current_file_directory / 'preprocessor' / f'{variable}_analysis.nc'
+    ds = xr.open_dataset(path)
+    # calculate yearly anomalies
+    anom_data = ds['exp'].sel(experiment = experiment, month = month, domain = domain) - ds['ctl'].sel(experiment = experiment, month = month, domain = domain)
+    # pull five year average anomaly data
+    anom = ds['anom'].sel(experiment = experiment, month = month, domain = domain)
 
-    fig, axs = plt.subplots(nrows = 2, ncols = 3, subplot_kw = {'projection': ccrs.PlateCarree()}, figsize = (3, 9))
+    # set up figure
+    fig, axs = plt.subplots(nrows = 2, ncols = 3, subplot_kw = {'projection': ccrs.PlateCarree()}, figsize = (15, 10))
     
-    labels_one = ['a.', 'b.', 'c.']
-    labels_two = ['d.', 'e.', 'f.']
-    labels_three = ['g.', 'h.', 'i.']
+    # create label names for each panel
+    labels = ['2016', '2017', '2018', '2019', '2020', 'Mean']
     
-    # loop for pecip anomalies on the top row
-    for idx, model in range(0,2):
-        # define levels
-        pr_levels  = np.array([-75, -60, -45, -30, -15, 0, 50, 100, 150, 200, 250])
-        ts_levels = np.linspace(0, 15, 15)
-        huss_levels = np.linspace(0, 7, 8)
-        
-        # define norm values to standardize colorbar to map colors
-        pr_norm = mcolors.BoundaryNorm(pr_levels, ncolors = plt.get_cmap(cmap.cmap('MPL_BrBG'), 14).N) # 15 bins means 14 edges
-        ts_norm = mcolors.BoundaryNorm(ts_levels, ncolors = plt.get_cmap(cmap.cmap('MPL_YlOrRd'), 14).N) # 15 bins means 14 edges
-        huss_norm = mcolors.BoundaryNorm(huss_levels, ncolors = plt.get_cmap(cmap.cmap('MPL_BuGn'), 7).N) # 8 bins means 7 edges
+    if elevation: 
+        # open WRF to pull elevation data
+        open_elevation = Dataset(current_file_directory / 'wrfout' / f'wrfout_{experiment}' / '2016' / f'wrfout_{domain}_2016-06-08_00:00:00')
+        # use getvar to access data
+        elevation_data = getvar(open_elevation, 'ter')
+        elevation_lat, elevation_lon = latlon_coords(elevation_data)
 
-        # call contour function in specified ax location      
-        precip_maps = axs[0][i].contourf(anom[idx]['lon'], anom[idx]['lat'], pr_data.values, levels = pr_levels, norm = pr_norm, cmap = cmap.cmap('MPL_BrBG'), extend = 'both', transform = ccrs.PlateCarree())
-        temp_maps = axs[1][i].contourf(anom[idx]['lon'], anom[idx]['lat'], ts_data.values, levels = ts_levels, norm = ts_norm, cmap = cmap.cmap('MPL_YlOrRd'), extend = 'both', transform = ccrs.PlateCarree())
-        huss_maps = axs[2][i].contourf(anom[idx]['lon'], anom[idx]['lat'], huss_data.values, levels = huss_levels, norm = huss_norm, cmap = cmap.cmap('MPL_BuGn'), extend = 'both', transform = ccrs.PlateCarree())
-        
-        for ax in [axs[0, i], axs[1, i], axs[2, i]]:
-            ax.set_extent([-143, -67.5, 20, 44.5])
-            
-            # add features to each map
-            ax.coastlines(linewidth = 1.5,color = 'k')
-            
-            states = cfeature.NaturalEarthFeature(category = 'cultural', name = 'admin_1_states_provinces_lines', scale = '50m', facecolor = 'none', edgecolor = 'k')
-            countries = cfeature.NaturalEarthFeature(category = 'cultural', name = 'admin_0_boundary_lines_land', scale = '50m', facecolor = 'none', edgecolor = 'k')
-            lakes = cfeature.NaturalEarthFeature(category = 'physical', name = 'lakes', scale = '50m', facecolor = 'none', edgecolor = 'k')
-            
-            ax.add_feature(states, linewidth = 1.5)
-            ax.add_feature(countries, linewidth = 1.5)
-            ax.add_feature(lakes, linewidth = 1.5)
-            
-        axs[0][i].text(0.02, 0.89, labels_one[i], fontsize = 30, fontweight = 'bold', transform = axs[0][i].transAxes)
-        axs[1][i].text(0.02, 0.89, labels_two[i], fontsize = 30, fontweight = 'bold', transform = axs[1][i].transAxes)
-        axs[2][i].text(0.02, 0.89, labels_three[i], fontsize = 30, fontweight = 'bold', transform = axs[2][i].transAxes)
+        # set elevation bands to appear every 500 meters
+        elevation_levels = np.arange(0, 8500, 500)
+
+    if domain == 'd01':
+        xvals = np.arange(72, 81.5, 0.5)
+        yvals = np.arange(32.5, 39.5, 0.5)
     
-    # PRECIPITATION COLORBAR
+    elif domain == 'd02':
+        xvals = np.arange(75.2, 77.8, 0.25)
+        yvals = np.arange(35, 37, 0.25)
+
+    else:
+        xvals = anom.XLONG[0, ::3].values
+        yvals = anom.XLAT[::3, 0].values
+
+    # define levels
+    levels = np.linspace(anom.min(), anom.max(), 15) 
+        
+    # define norm values to standardize colorbar to map colors
+    norm = mcolors.BoundaryNorm(levels, ncolors = plt.get_cmap(cmap.cmap('MPL_BrBG'), 14).N) # 15 bins means 14 edges
+    # TODO: define how many bins there should be for the colorbar? should it be 14?
+
+    # flatten axs to a 1D array of 6 elements
+    flat_axs = axs.flatten()
+
+    # add data to each panel
+    for i, ax in enumerate(flat_axs[:-1]):
+        # ax.set_extent([-143, -67.5, 20, 44.5])
+        # TODO: define the right boundaries for d01 and d02
+
+        # define calendar year
+        year = 2016 + i
+        # call data for that year
+        data = anom_data.sel(year = year) 
+        maps_row1 = ax.contourf(data['XLONG'], data['XLAT'], data.values, levels = levels, norm = norm, cmap = cmap.cmap('MPL_BrBG'), extend = 'both', transform = ccrs.PlateCarree())
+    
+        # add label to panel
+        ax.text(0.02, 0.89, labels[i], fontsize = 30, fontweight = 'bold', transform = ax.transAxes)
+        
+        if elevation:
+            # plot elevation bands on each panel
+            elevations = ax.contour(elevation_lon, elevation_lat, elevation_data, levels = elevation_levels, colors = 'black', linewidths = 0.25, transform = ccrs.PlateCarree())
+        
+        # add x and y axis values
+        ax.set_xticks(xvals, crs = ccrs.PlateCarree())
+        ax.set_xticklabels(xvals, rotation = 45, ha = 'right')
+        ax.set_yticks(yvals, crs = ccrs.PlateCarree())
+        ax.set_yticklabels(yvals)
+
+    # add anomaly data to last panel
+    anom_map = flat_axs[-1].contourf(anom['XLONG'], anom['XLAT'], anom.values, levels = levels, norm = norm, cmap = cmap.cmap('MPL_BrBG'), extend = 'both', transform = ccrs.PlateCarree())
+    
+    # add label to five year average panel
+    flat_axs[-1].text(0.02, 0.89, labels[-1], fontsize = 30, fontweight = 'bold', transform = flat_axs[-1].transAxes)
+    
+    if elevation:
+        # add elevation bands to five year average panel
+        elevations = flat_axs[-1].contour(elevation_lon, elevation_lat, elevation_data, levels = elevation_levels, colors = 'black', linewidths = 0.25, transform = ccrs.PlateCarree())
+        
+    # add x and y axis values
+    flat_axs[-1].set_xticks(xvals, crs = ccrs.PlateCarree())
+    flat_axs[-1].set_xticklabels(xvals, rotation = 45, ha = 'right')
+    flat_axs[-1].set_yticks(yvals, crs = ccrs.PlateCarree())
+    flat_axs[-1].set_yticklabels(yvals)
+    
     # fine tuning control of colorbar size and placement
-    pr_axins = inset_axes(ax, width = '10%', height = '20%', loc = 'center right', bbox_to_anchor = (0.935, 0.08, 0.08, 1.5), bbox_transform = fig.transFigure, borderpad = 0)
+    axins = inset_axes(ax, width = '10%', height = '20%', loc = 'center right', bbox_to_anchor = (0.935, 0.08, 0.08, 1.5), bbox_transform = fig.transFigure, borderpad = 0)
 
     # create a scalar mappable as a standin for contour so the colorbar remains standardized across different maps
-    pr_sm = mpl.cm.ScalarMappable(norm = pr_norm, cmap = cmap.cmap('MPL_BrBG'))
-    pr_sm.set_array([])
+    sm = mpl.cm.ScalarMappable(norm = norm, cmap = cmap.cmap('MPL_BrBG'))
+    sm.set_array([])
     
     #  colorbar function passed using the scalar mappable 
-    pr_cbar = fig.colorbar(pr_sm, cax = pr_axins, orientation = 'vertical', extend = 'both', ticks = pr_levels, boundaries = pr_levels, aspect = 50)
-    pr_cbar.ax.tick_params(labelsize = 20)
-    pr_cbar.ax.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.0f'))
-    
-    # TEMPERATURE COLORBAR
-    # fine tuning control of colorbar size and placement
-    ts_axins = inset_axes(ax, width = '10%', height = '20%', loc='center right', bbox_to_anchor = (0.935, -0.25, 0.08, 1.5), bbox_transform = fig.transFigure, borderpad = 0)
+    cbar = fig.colorbar(sm, cax = axins, orientation = 'vertical', extend = 'both', ticks = levels, boundaries = levels, aspect = 50)
+    cbar.ax.tick_params(labelsize = 20)
+    cbar.ax.yaxis.set_major_formatter(ticker.FormatStrFormatter(units))
 
-    # create a scalar mappable as a standin for contour so the colorbar remains standardized across different maps
-    ts_sm = mpl.cm.ScalarMappable(norm = ts_norm, cmap =  cmap.cmap('MPL_YlOrRd'))
-    ts_sm.set_array([])
-    
-    #  colorbar function passed using the scalar mappable 
-    ts_cbar = fig.colorbar(ts_sm, cax = ts_axins, orientation = 'vertical', extend = 'both', ticks = [0, 2.5, 5, 7.5, 10, 12.5, 15], boundaries = ts_levels, aspect = 50)
-    ts_cbar.ax.tick_params(labelsize = 20)
-    ts_cbar.ax.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.0f'))
-    
-    # HUMIDITY COLORBAR
-    # fine tuning control of colorbar size and placement
-    huss_axins = inset_axes(ax, width = '10%', height = '20%', loc = 'center right', bbox_to_anchor = (0.935, -0.585, 0.08, 1.5), bbox_transform = fig.transFigure, borderpad = 0)
-
-    # create a scalar mappable as a standin for contour so the colorbar remains standardized across different maps
-    huss_sm = mpl.cm.ScalarMappable(norm = huss_norm, cmap = cmap.cmap('MPL_BuGn'))
-    huss_sm.set_array([])
-    
-    # colorbar function passed using the scalar mappable 
-    huss_cbar = fig.colorbar(huss_sm, cax = huss_axins, orientation = 'vertical', extend = 'both', ticks = huss_levels, boundaries = huss_levels, aspect = 50)
-    huss_cbar.ax.tick_params(labelsize = 20)
-    huss_cbar.ax.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.0f'))
-     
-    fig.text(-1.7, 3.35, 'Wet Case', transform = ax.transAxes, fontsize = 60, va = 'top', ha = 'left', bbox = dict(facecolor = 'white', pad  = 1, edgecolor = 'white'))
-    fig.text(-0.78, 3.35, 'Moderate Case', transform = ax.transAxes, fontsize = 60, va = 'top', ha = 'left', bbox = dict(facecolor = 'white', pad  = 1, edgecolor = 'white'))
-    fig.text(0.4, 3.35, 'Dry Case', transform = ax.transAxes, fontsize = 60, va = 'top', ha = 'left', bbox = dict(facecolor = 'white', pad  = 1, edgecolor = 'white'))
-    
     if save:
         # all PNGs stored to anomaly_maps directory but ignored in Git
         save_path = current_file_directory.joinpath(save_name)
@@ -171,94 +176,15 @@ def future_change_fig(variable, month, domain, experiment):
         
     plt.show()
 
-def plot_anom(data, title, colorbar_label, color, domain, elevation = False):
-    
-    fig = plt.figure(figsize = (10, 10))
-    ax = plt.axes(projection = ccrs.PlateCarree())
-    
-    # create a red box to show bounds of the inner most domain (d03)
-    open_bounds = Dataset(current_file_directory / 'wrfout/wrfout_ctl/2016/wrfout_d03_2016-06-08_00:00:00')
-    area_bounds = getvar(open_bounds, 'RAINNC', timeidx = ALL_TIMES)
-    min_long = float(area_bounds['XLONG'].values.min())
-    max_long = float(area_bounds['XLONG'].values.max())
-    min_lat = float(area_bounds['XLAT'].values.min())
-    max_lat = float(area_bounds['XLAT'].values.max())
-    
-    # define width and height of box
-    width = max_long - min_long
-    height = max_lat - min_lat
-    
-    # create rectangle
-    rect = patches.Rectangle((min_long, min_lat), width, height, 
-                             linewidth = 4, edgecolor = 'red', facecolor = 'none', 
-                             label = 'D03 Bounds', zorder = 5)
-    # apply red box to map
-    ax.add_patch(rect)
-    
-    # define min and max values in the dataset
-    anom_min = data.min().values
-    anom_max = data.max().values
-    
-    # normalize range of values for the colorbar
-    if colorbar_label == '%':
-        norm = mcolors.TwoSlopeNorm(vmin = 0, vcenter = 100, vmax = 250)
-    elif colorbar_label == 'W m-2':
-        norm = mcolors.TwoSlopeNorm(vmin = -80, vcenter = 0, vmax = 200)
-    elif anom_min < 0 < anom_max:
-        norm = mcolors.TwoSlopeNorm(vmin = anom_min, vcenter = 0, vmax = anom_max) 
-    else:
-        norm = mcolors.Normalize(vmin = anom_min, vmax = anom_max)
 
-    # set nans to white
-    my_cmap = copy.copy(cmap.cmap(color)) # Copy the colormap
-    my_cmap.set_bad('white')
 
-    # map data and create colorbar
-    mapp = ax.contourf(data.XLONG, data.XLAT, data.values, transform = ccrs.PlateCarree(), cmap = my_cmap, extend = 'both', levels = 20, norm = norm)
-    plt.colorbar(mapp, ax = ax, orientation = 'horizontal', label = colorbar_label, extend = 'both', pad = 0.1)
-    
-    if domain == 'd01':
-        xvals = np.arange(72, 81.5, 0.5)
-        ax.set_xticks(xvals, crs = ccrs.PlateCarree())
-        ax.set_xticklabels(xvals, rotation = 45, ha = 'right')
 
-        yvals = np.arange(32.5, 39.5, 0.5)
-        ax.set_yticks(yvals, crs = ccrs.PlateCarree())
-        ax.set_yticklabels(yvals)
 
-    elif domain == 'd02':
-        xvals = np.arange(75.2, 77.8, 0.25)
-        ax.set_xticks(xvals, crs = ccrs.PlateCarree())
-        ax.set_xticklabels(xvals, rotation = 45, ha = 'right')
 
-        yvals = np.arange(35, 37, 0.25)
-        ax.set_yticks(yvals, crs = ccrs.PlateCarree())
-        ax.set_yticklabels(yvals)
 
-    else:
-        xvals = data.XLONG[0, ::3].values
-        ax.set_xticks(xvals, crs = ccrs.PlateCarree())
-        ax.set_xticklabels(xvals, rotation = 45, ha = 'right')
 
-        yvals = data.XLAT[::3, 0].values
-        ax.set_yticks(yvals, crs = ccrs.PlateCarree())
-        ax.set_yticklabels(yvals)
 
-    if elevation:
-        open_elevation = Dataset(f'/uufs/chpc.utah.edu/common/home/strong-group7/husile/karakoram/model_result/wrfout_MODISImproved/2016/wrfout_{domain}_2016-06-08_00:00:00')
-        elevation_data = getvar(open_elevation, 'ter')
-        lat, lon = latlon_coords(elevation_data)
-        # set elevation bands to appear every 500 meters
-        levels = np.arange(0, 8500, 500)
-        # plot elevation bands
-        elevations = ax.contour(lon, lat, elevation_data, levels = levels, colors = 'black', linewidths = 0.25, transform = ccrs.PlateCarree())
-        # add labels
-        plt.clabel(elevations, inline = True, fontsize = 5, fmt = '%i', colors = 'black')
 
-    # add title to top of map
-    plt.title(title)
-
-    return plt
 
 
 # ctl = test_mfc('d02', 7, 'ctl')
