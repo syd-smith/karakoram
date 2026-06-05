@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 import sys
+from typing import Literal
 from wrf import (getvar, ALL_TIMES, interplevel, vertcross, CoordPair)
 import xarray as xr
 
@@ -34,16 +35,53 @@ sys.path.append(str(current_file_directory))
 # - Functions - 
 # ==============
 
+def simple_data_pull(
+        variable: str, 
+        month: Literal[5, 6, 7],
+        domain: Literal['d01', 'd02', 'd03'], 
+        experiment: Literal['ctl', 'noise', 'MODISImproved']
+    ) -> list:
 
-def get_data(variable, month, domain, experiment):
+    # termini experiment = MODISIMPROVED
+    # store all data in list
+    five_year_data = []
+
+    for year in range(2016, 2021):
+        path = current_file_directory.parent / 'wrfout' / f'wrfout_{experiment}/{year}/'
+            
+        # if data for given variable accumulates in a "continuously rising staircase" and thus has to be differenced to finnd raw value
+
+        # create a list with all control experiment files and open them
+        collect_files = sorted(glob.glob(str(path / f'wrfout_{domain}_{year}-0{month}*')))
+        open_files = [Dataset(file) for file in collect_files]
+        
+        # find hourly precipitation vales (data essentially creating a staircase so you have to difference values from the previous timestamp to current)
+        accumulated = getvar(open_files, variable, timeidx = ALL_TIMES)
+
+        # find average precip rate for the 6 hour period  
+        total_monthly_precip = accumulated[-1] - accumulated[0]
+        number_of_timesteps = accumulated.sizes['Time'] - 1
+        monthly_mean = total_monthly_precip / number_of_timesteps
+        five_year_data.append(monthly_mean) # compute an average precip rate for the given month 
+        
+    return five_year_data
+
+
+def get_data(
+        variable: str, 
+        month: Literal[5, 6, 7],
+        domain: Literal['d01', 'd02', 'd03'], 
+        experiment: Literal['ctl', 'noise', 'MODISImproved']
+    ) -> list:
 
     """
-    Collect variable data for all five years of the WRF simulation (2016-2020). Note
-    that data are bounded by the domain and month passed to the function. For data
-    that progress in a "stair step" type fashion representing continual acccumulation 
-    (i.e. RAINNC), values are separated into "step size" relative to each time stamp.
-    All other variables are left as is. For more information, see wrf.getvar 
-    documentation.
+    Collect variable data for all five years of the WRF simulation (2016-
+    2020) and return a monthly average. Note that data are bounded by the 
+    domain and month passed to the function. For data that progress in a 
+    "stair step" type fashion representing continual acccumulation (i.e. 
+    RAINNC), values are separated into "step size" relative to each time 
+    stamp. All other variables are left as is. For more information, see 
+    wrf.getvar documentation.
     """
 
     # termini experiment = MODISIMPROVED
@@ -60,7 +98,7 @@ def get_data(variable, month, domain, experiment):
             elif month == 6:
                 start_position = sorted(glob.glob(str(path / f'wrfout_{domain}_{year}-05-31_18:00:00')))
             elif month == 5:
-                start_position = sorted(glob.glob(str(path / f'wrfout_{domain}_{year}-04-30_18:00:00')))
+                start_position = sorted(glob.glob(str(path / f'wrfout_{domain}_{year}-05-01_00:00:00')))
             else:
                 print('Select a valid summer month.')
             
@@ -83,12 +121,16 @@ def get_data(variable, month, domain, experiment):
             # compile control data into one netcdf
             instantaneous = getvar(open_files, variable, timeidx = ALL_TIMES)
             # take the monthly average
-            five_year_data.append(instantaneous.mean(dim = 'Time')) # append file to list to access outside of the loop
+            five_year_data.append(instantaneous) # append file to list to access outside of the loop
 
     return five_year_data
 
 
-def get_mfc(month, domain, experiment):
+def get_mfc(
+        month: Literal[5, 6, 7], 
+        domain: Literal['d01', 'd02', 'd03'], 
+        experiment: str
+    ) -> list:
 
     """
     Calculate five years of moisture flux convergence data from water vapor mixing 
@@ -136,7 +178,15 @@ def get_mfc(month, domain, experiment):
     return five_year_data
 
 
-def WVT(year, qvapor, ua, va, ht, experiment, month):
+def WVT(
+        year: Literal[0, 1, 2, 3, 4], 
+        qvapor: xr.DataArray, 
+        ua: xr.DataArray, 
+        va: xr.DataArray, 
+        ht: xr.DataArray, 
+        experiment: str, 
+        month: Literal[5, 6, 7]
+    ):
 
     """
     Calculate water vapor transport (WVT) from water vapor mixing ratio, wind, and height.
@@ -208,17 +258,33 @@ def WVT(year, qvapor, ua, va, ht, experiment, month):
     file_year = 2016 + year
     path = current_file_directory.parent / 'wrfout' / f'wrfout_{experiment}/{file_year}/'
     collect_files = sorted(glob.glob(str(path / f'wrfout_d01_{file_year}-0{month}*')))
-    open_files = [Dataset(file) for file in collect_files]
+    open_file = [Dataset(file) for file in collect_files]
 
-    cross_section = vertcross(WVT, ht[year], wrfin = open_files, start_point = start, end_point = stop, latlon = True, autolevels = 100)
+    cross_section = vertcross(
+        WVT, 
+        ht[year], 
+        wrfin = open_file, 
+        start_point = start, 
+        end_point = stop, 
+        latlon = True, 
+        autolevels = 100,
+        timeidx = ALL_TIMES)
 
-    return cross_section
+    return cross_section.mean(dim = 'Time')
 
 
-def five_yr_anom(variable, month, domain, experiment):
+def five_yr_anom(
+        variable: str,
+        month: Literal[5, 6, 7], 
+        domain: ['d01', 'd02', 'd03'], 
+        experiment: str
+    ) -> xr.Dataset:
 
     """
-    Take five year data from get_data and calculate an anomaly
+    Takea five years of simulation data and calculate an anomaly of the five
+    year average. Data for each year, the five year average of the control 
+    and anomaly, and five year anoomaly average is returned in an xarray
+    Dataset.
     """
     
     # define years used in simulation
@@ -231,17 +297,17 @@ def five_yr_anom(variable, month, domain, experiment):
 
     elif variable == 'WVT':
         # call all variables to pass into the WVT function for the control experiment calculation
-        ctl_qvapor = get_data('QVAPOR', month, domain, 'ctl')
-        ctl_ua = get_data('ua', month, domain, 'ctl')
-        ctl_va = get_data('va', month, domain, 'ctl')
-        ctl_ht = get_data('z', month, domain, 'ctl')   
+        ctl_qvapor = get_data('QVAPOR', month, 'd01', 'ctl')
+        ctl_ua = get_data('ua', month, 'd01', 'ctl')
+        ctl_va = get_data('va', month, 'd01', 'ctl')
+        ctl_ht = get_data('z', month, 'd01', 'ctl')   
         ctl_list = []
 
         # call all variables to pass into the WVT function for the experiment calculation
-        exp_qvapor = get_data('QVAPOR', month, domain, experiment)
-        exp_ua = get_data('ua', month, domain, experiment)
-        exp_va = get_data('va', month, domain, experiment)
-        exp_ht = get_data('z', month, domain, experiment)  
+        exp_qvapor = get_data('QVAPOR', month, 'd01', experiment)
+        exp_ua = get_data('ua', month, 'd01', experiment)
+        exp_va = get_data('va', month, 'd01', experiment)
+        exp_ht = get_data('z', month, 'd01', experiment)  
         exp_list = []
         
         for idx in range(0,5):
@@ -280,51 +346,59 @@ def five_yr_anom(variable, month, domain, experiment):
     return local_ds
 
 
-def main():
+def main(wvt = True, pr_default = True, pr_simple = True):
+
     # dimensions to work through
     months = [5, 6, 7]
     experiments = ['noise', 'MODISImproved']
-    domains = ['d01', 'd02']
+    domains = ['d01', 'd02', 'd03']
 
-    # pull WVT data only for d01
-    wvt_exps = []
-    for exp in experiments:
-        wvt_months = []
-        for month in months:
-            # Returns a dataset containing ctl, exp, ctl_mean, exp_mean, anom
-            wvt_months.append(five_yr_anom('WVT', month, 'd01', exp))
-        wvt_exps.append(xr.concat(wvt_months, dim = 'month').assign_coords(month = months))
-    # add both experiemtns to same dataarray
-    wvt_master = xr.concat(wvt_exps, dim = 'experiment').assign_coords(experiment = experiments)
-
-    # save WVT dataset
-    wvt_encoding = {var: {'zlib': True, 'complevel': 4} for var in wvt_master.data_vars}
-    wvt_path = current_file_directory / 'wvt_analysis.nc'
-    
-    wvt_master.to_netcdf(wvt_path, encoding = wvt_encoding)
-    print(f"Success! Data saved to: {wvt_path}")
-
-    # pull pr data for d01 and d02
-    pr_doms = []
-    for dom in domains:
-        pr_exps = []
+    if wvt:
+        # pull WVT data only for d01
+        wvt_exps = []
         for exp in experiments:
-            pr_months = []
+            wvt_months = []
             for month in months:
-                pr_months.append(five_yr_anom('RAINNC', month, dom, exp))
-            pr_exps.append(xr.concat(pr_months, dim = 'month').assign_coords(month = months))
-        pr_doms.append(xr.concat(pr_exps, dim = 'experiment').assign_coords(experiment = experiments))
-    # pull all pr data together 
-    pr_master = xr.concat(pr_doms, dim='domain').assign_coords(domain=domains)
-    print("Finished Precipitation pipeline.")
+                # Returns a dataset containing ctl, exp, ctl_mean, exp_mean, anom
+                wvt_months.append(five_yr_anom('WVT', month, 'd01', exp))
+            wvt_exps.append(xr.concat(wvt_months, dim = 'month').assign_coords(month = months))
+        # add both experiemtns to same dataarray
+        wvt_master = xr.concat(wvt_exps, dim = 'experiment').assign_coords(experiment = experiments)
 
-    # save precipitation dataset
-    pr_encoding = {var: {'zlib': True, 'complevel': 4} for var in pr_master.data_vars}
-    pr_path = current_file_directory / 'pr_analysis.nc'
-    
-    pr_master.to_netcdf(pr_path, encoding = pr_encoding)
-    print(f"Success! Data saved to: {pr_path}")
+        # fix dropped coordinate before saving
+        if 'xy_loc' in wvt_master.coords:
+            wvt_master = wvt_master.drop_vars('xy_loc')
 
+        # save WVT dataset
+        wvt_encoding = {var: {'zlib': True, 'complevel': 4} for var in wvt_master.data_vars}
+        wvt_path = current_file_directory / 'wvt_analysis.nc'
+        
+        wvt_master.to_netcdf(wvt_path, encoding = wvt_encoding)
+        print(f"Success! Data saved to: {wvt_path}")
+
+    if pr_default:
+        # pull pr data for d01 and d02 separately
+        for dom in domains:
+            pr_exps = []
+            for exp in experiments:
+                pr_months = []
+                for month in months:
+                    pr_months.append(five_yr_anom('RAINNC', month, dom, exp))
+                pr_exps.append(xr.concat(pr_months, dim = 'month').assign_coords(month = months))
+            
+            # Combine the experiments for this specific domain
+            pr_domain_master = xr.concat(pr_exps, dim = 'experiment').assign_coords(experiment = experiments)
+            print(f'Finished Precipitation for domain: {dom}')
+
+            # Define unique path for this domain (e.g., pr_analysis_d01.nc)
+            pr_path = current_file_directory / f'pr_analysis_{dom}.nc'
+            
+            # Dynamic encoding based on the variables present in this domain's dataset
+            pr_encoding = {var: {'zlib': True, 'complevel': 4} for var in pr_domain_master.data_vars}
+            
+            # Save the clean, non-NaN domain file
+            pr_domain_master.to_netcdf(pr_path, encoding = pr_encoding)
+            print(f"Success! Domain data saved to: {pr_path}")
 
 
 # trigger the main function
