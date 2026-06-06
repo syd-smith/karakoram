@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=make_netcdf   # Name showing up in squeue
+#SBATCH --job-name=RAINNC   # Name showing up in squeue
 #SBATCH --account=strong-kp    	    # Court's node (kingspeak11)
 #SBATCH --partition=strong-kp
 #SBATCH --nodes=1                   # Single node is best for single script multi-threading

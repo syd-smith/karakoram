@@ -110,7 +110,17 @@ def get_data(
             accumulated = getvar(open_files, variable, timeidx = ALL_TIMES)
                 
             hourly = accumulated.diff(dim = 'Time') # find precip rate for the 6 hour period
-            five_year_data.append(hourly.mean(dim = 'Time')) # compute an average precip rate for the given month 
+            monthly_mean = hourly.mean(dim = 'Time')
+
+            if 'XLAT' in accumulated.coords and 'XLONG' in accumulated.coords:
+                # Grab a static spatial slice of the original coordinates
+                lat_coord = accumulated.coords['XLAT'].isel(Time = 0, drop = True) if 'Time' in accumulated.coords['XLAT'].dims else accumulated.coords['XLAT']
+                lon_coord = accumulated.coords['XLONG'].isel(Time = 0, drop = True) if 'Time' in accumulated.coords['XLONG'].dims else accumulated.coords['XLONG']
+                
+                # Assign them onto the averaged monthly mean array
+                monthly_mean = monthly_mean.assign_coords(XLAT=lat_coord, XLONG=lon_coord)
+            
+            five_year_data.append(monthly_mean) # compute an average precip rate for the given month 
             
         # if data for given variable is provided as an instantaneous result at that timestamp
         else:
@@ -260,6 +270,9 @@ def WVT(
     collect_files = sorted(glob.glob(str(path / f'wrfout_d01_{file_year}-0{month}*')))
     open_file = [Dataset(file) for file in collect_files]
 
+    # define fixed veritcal height levels
+    fixed_levels = np.linspace(0, 15000, 100)
+
     cross_section = vertcross(
         WVT, 
         ht[year], 
@@ -267,7 +280,7 @@ def WVT(
         start_point = start, 
         end_point = stop, 
         latlon = True, 
-        autolevels = 100,
+        levels = fixed_levels,
         timeidx = ALL_TIMES)
 
     return cross_section.mean(dim = 'Time')
@@ -403,4 +416,4 @@ def main(wvt = True, pr_default = True, pr_simple = True):
 
 # trigger the main function
 if __name__ == '__main__':
-    main()
+    main(wvt = False)
