@@ -59,14 +59,14 @@ def six_panel_fig(
 
     # define path for data call
     path = current_file_directory / 'preprocessor' / f'{variable}_analysis_{domain}.nc'
-    ds = xr.open_dataset(path)
-    # calculate yearly anomalies
-    anom_data = ds['exp'].sel(experiment = experiment, month = month) - ds['ctl'].sel(experiment = experiment, month = month)
-    # pull five year average anomaly data
-    anom = ds['anom'].sel(experiment = experiment, month = month)
+    with xr.open_dataset(path) as ds:
+        # calculate yearly anomalies
+        anom_data = ds['exp'].sel(experiment = experiment, month = month) - ds['ctl'].sel(experiment = experiment, month = month).load()
+        # pull five year average anomaly data
+        anom = ds['anom'].sel(experiment = experiment, month = month).load()
 
     # set up figure
-    fig, axs = plt.subplots(nrows = 2, ncols = 3, subplot_kw = {'projection': ccrs.PlateCarree()}, figsize = (15, 10))
+    fig, axs = plt.subplots(nrows = 2, ncols = 3, subplot_kw = {'projection': ccrs.PlateCarree()}, figsize = (17, 8))
     
     # create label names for each panel
     # labels = ['2016', '2017', '2018', '2019', '2020', 'Mean']
@@ -74,10 +74,15 @@ def six_panel_fig(
     
     if elevation: 
         # open WRF to pull elevation data
-        open_elevation = Dataset(current_file_directory / 'wrfout' / f'wrfout_{experiment}' / '2016' / f'wrfout_{domain}_2016-06-08_00:00:00')
-        # use getvar to access data
-        elevation_data = getvar(open_elevation, 'ter')
-        elevation_lat, elevation_lon = latlon_coords(elevation_data)
+        wrf_path = current_file_directory / 'wrfout' / f'wrfout_{experiment}' / '2016' / f'wrfout_{domain}_2016-06-08_00:00:00'
+        with Dataset(wrf_path) as open_elevation:
+            # use getvar to access data
+            elevation_data = getvar(open_elevation, 'ter')
+            elevation_lat, elevation_lon = latlon_coords(elevation_data)
+            # force data to np arrays so it doesn't hold on to the open file
+            elevation_data = to_np(elevation_data)
+            elevation_lat = to_np(elevation_lat)
+            elevation_lon = to_np(elevation_lon)
 
         # set elevation bands to appear every 500 meters
         elevation_levels = np.arange(0, 8500, 500)
@@ -98,7 +103,8 @@ def six_panel_fig(
     levels = np.linspace(float(anom.min()), float(anom.max()), 15) 
         
     # define norm values to standardize colorbar to map colors
-    norm = mcolors.BoundaryNorm(levels, ncolors = plt.get_cmap(cmap.cmap('MPL_BrBG'), 14).N) # 15 bins means 14 edges
+    norm = mcolors.TwoSlopeNorm(vmin = float(levels.min()), vcenter = 0, vmax = float(levels.max()))
+    # norm = mcolors.BoundaryNorm(levels, ncolors = plt.get_cmap(cmap.cmap('MPL_BrBG'), 14).N) # 15 bins means 14 edges
     # TODO: define how many bins there should be for the colorbar? should it be 14?
 
     # flatten axs to a 1D array of 6 elements
@@ -106,8 +112,7 @@ def six_panel_fig(
 
     # add data to each panel
     for i, ax in enumerate(flat_axs[:-1]):
-        # ax.set_extent([-143, -67.5, 20, 44.5])
-        # TODO: define the right boundaries for d01 and d02
+        ax.set_extent([float(xvals.min()), float(xvals.max()), float(yvals.min()), float(yvals.max())], crs=ccrs.PlateCarree())
 
         # define calendar year
         year = 2016 + i
@@ -116,28 +121,33 @@ def six_panel_fig(
         maps = ax.contourf(data['XLONG'], data['XLAT'], data.values, levels = levels, norm = norm, cmap = cmap.cmap('MPL_BrBG'), extend = 'both', transform = ccrs.PlateCarree())
     
         # add label to panel
-        ax.text(0.02, 0.89, labels[i], fontsize = 15, fontweight = 'bold', transform = ax.transAxes)
+        ax.text(0.93, 0.9, labels[i], fontsize = 15, fontweight = 'bold', transform = ax.transAxes)
         
         if elevation:
             # plot elevation bands on each panel
             elevations = ax.contour(elevation_lon, elevation_lat, elevation_data, levels = elevation_levels, colors = 'black', linewidths = 0.25, transform = ccrs.PlateCarree())
-        
-        # add x and y axis values
-        # ax.set_xticks(xvals, crs = ccrs.PlateCarree())
-        # ax.set_xticklabels(xvals, rotation = 45, ha = 'right')
-        # ax.set_yticks(yvals, crs = ccrs.PlateCarree())
-        # ax.set_yticklabels(yvals)
+            # add labels to elevation bars
+            plt.clabel(elevations, inline = True, fontsize = 5, fmt = '%i', colors = 'black')
 
+        # add x and y axis values
+        ax.set_xticks(xvals, crs = ccrs.PlateCarree())
+        ax.set_xticklabels(xvals, rotation = 45, ha = 'right')
+        ax.set_yticks(yvals, crs = ccrs.PlateCarree())
+        ax.set_yticklabels(yvals)
+
+    flat_axs[-1].set_extent([float(xvals.min()), float(xvals.max()), float(yvals.min()), float(yvals.max())], crs=ccrs.PlateCarree())
     # add anomaly data to last panel
-    anom_map = flat_axs[-1].contourf(anom['XLONG'], anom['XLAT'], anom.values, levels = levels, norm = norm, cmap = cmap.cmap('MPL_BrBG'), extend = 'both', transform = ccrs.PlateCarree())
+    anom_map = flat_axs[-1].contourf(data['XLONG'], data['XLAT'], anom.values, levels = levels, norm = norm, cmap = cmap.cmap('MPL_BrBG'), extend = 'both', transform = ccrs.PlateCarree())
     
     # add label to five year average panel
-    flat_axs[-1].text(0.02, 0.89, labels[-1], fontsize = 30, fontweight = 'bold', transform = flat_axs[-1].transAxes)
+    flat_axs[-1].text(0.93, 0.9, labels[-1], fontsize = 15, fontweight = 'bold', transform = flat_axs[-1].transAxes)
     
     if elevation:
         # add elevation bands to five year average panel
         elevations = flat_axs[-1].contour(elevation_lon, elevation_lat, elevation_data, levels = elevation_levels, colors = 'black', linewidths = 0.25, transform = ccrs.PlateCarree())
-        
+        # add labels to elevation bars
+        plt.clabel(elevations, inline = True, fontsize = 5, fmt = '%i', colors = 'black')
+
     # add x and y axis values
     flat_axs[-1].set_xticks(xvals, crs = ccrs.PlateCarree())
     flat_axs[-1].set_xticklabels(xvals, rotation = 45, ha = 'right')
@@ -145,7 +155,13 @@ def six_panel_fig(
     flat_axs[-1].set_yticklabels(yvals)
     
     # fine tuning control of colorbar size and placement
-    axins = inset_axes(ax, width = '25%', height = '90%', loc = 'center right', bbox_to_anchor = (0.92, 0.15, 0.08, 0.70), bbox_transform = fig.transFigure, borderpad = 5)
+    axins = inset_axes(ax, 
+                       width = '25%', 
+                       height = '90%', 
+                       loc = 'center right', 
+                       bbox_to_anchor = (0.9, 0.15, 0.08, 0.70), 
+                       bbox_transform = fig.transFigure, 
+                       borderpad = 5)
 
     # create a scalar mappable as a standin for contour so the colorbar remains standardized across different maps
     sm = mpl.cm.ScalarMappable(norm = norm, cmap = cmap.cmap('MPL_BrBG'))
@@ -163,6 +179,10 @@ def six_panel_fig(
         plt.savefig(save_path, dpi = 400)
         
     plt.show()
+    # help to clear out memory
+    plt.close(fig)
+
+    return fig
 
 
 def six_panel_transect(
@@ -181,14 +201,14 @@ def six_panel_transect(
    
     # define path for data call
     path = current_file_directory / 'preprocessor' / 'wvt_analysis.nc'
-    ds = xr.open_dataset(path)
-    # calculate yearly anomalies
-    anom_data = ds['exp'].sel(experiment = experiment, month = month) - ds['ctl'].sel(experiment = experiment, month = month)
-    # pull five year average anomaly data
-    anom = ds['anom'].sel(experiment = experiment, month = month)
+    with xr.open_dataset(path) as ds:
+        # calculate yearly anomalies
+        anom_data = ds['exp'].sel(experiment = experiment, month = month) - ds['ctl'].sel(experiment = experiment, month = month).load()
+        # pull five year average anomaly data
+        anom = ds['anom'].sel(experiment = experiment, month = month).load()
 
     # set up figure
-    fig, axs = plt.subplots(nrows = 2, ncols = 3, figsize = (15, 10))
+    fig, axs = plt.subplots(nrows = 2, ncols = 3, figsize = (25, 10))
 
     # create label names for each panel
     # labels = ['2016', '2017', '2018', '2019', '2020', 'Mean']
@@ -198,7 +218,8 @@ def six_panel_transect(
     levels = np.linspace(float(anom.min()), float(anom.max()), 15) 
         
     # define norm values to standardize colorbar to map colors
-    norm = mcolors.BoundaryNorm(levels, ncolors = plt.get_cmap(cmap.cmap('MPL_BrBG'), 14).N) # 15 bins means 14 edges
+    norm = mcolors.TwoSlopeNorm(vmin = float(levels.min()), vcenter = 0, vmax = float(levels.max()))
+    # norm = mcolors.BoundaryNorm(levels, ncolors = plt.get_cmap(cmap.cmap('MPL_BrBG'), 14).N) # 15 bins means 14 edges
     # TODO: define how many bins there should be for the colorbar? should it be 14?
 
     # flatten axs to a 1D array of 6 elements
@@ -264,7 +285,13 @@ def six_panel_transect(
     flat_axs[-1].set_xticklabels([])
 
     # fine tuning control of colorbar size and placement
-    axins = inset_axes(ax, width = '2%', height = '75%', loc = 'center right', bbox_transform = fig.transFigure, borderpad = 5)
+    axins = inset_axes(ax, 
+                       width = '25%', 
+                       height = '90%', 
+                       loc = 'center right', 
+                       bbox_to_anchor = (0.89, 0.15, 0.08, 0.70), 
+                       bbox_transform = fig.transFigure, 
+                       borderpad = 5)
 
     # create a scalar mappable as a standin for contour so the colorbar remains standardized across different maps
     sm = mpl.cm.ScalarMappable(norm = norm, cmap = cmap.cmap('MPL_BrBG'))
@@ -280,13 +307,12 @@ def six_panel_transect(
         # all PNGs stored to anomaly_maps directory but ignored in Git
         save_path = current_file_directory / 'figures' / f'{save_name}.png'
         plt.savefig(save_path, dpi = 400)
-        
-    plt.show()
+
+    plt.show() 
+    # help to clear out memory
+    plt.close(fig)
 
     return fig
-
-
-
 
 
 def main():
@@ -294,26 +320,8 @@ def main():
         for experiment in ['noise', 'MODISImproved']:
             six_panel_fig('RAINNC', month, 'd01', experiment, 'mm / 6 hours', save_name = f'pr_{month}_{experiment}_d01', save = True)
             six_panel_fig('RAINNC', month, 'd02', experiment, 'mm / 6 hours', save_name = f'pr_{month}_{experiment}_d02', save = True)
-            # six_panel_transect(month, experiment, 'WVT (kg/m/s)', save_name = f'wvt_{month}_{experiment}', save = True)
+            six_panel_transect(month, experiment, 'WVT (kg/m/s)', save_name = f'wvt_{month}_{experiment}', save = True)
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
-
-# %%
-variable = 'RAINNC'
-experiment = 'noise'
-month = 7
-domain = 'd01'
-
-
-# define path for data call
-path = current_file_directory / 'preprocessor' / f'{variable}_analysis_{domain}.nc'
-ds = xr.open_dataset(path)
-# calculate yearly anomalies
-anom_data = ds['exp'].sel(experiment = experiment, month = month) - ds['ctl'].sel(experiment = experiment, month = month)
-# pull five year average anomaly data
-anom = ds['anom'].sel(experiment = experiment, month = month)
-
-
 # %%
