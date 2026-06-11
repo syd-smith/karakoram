@@ -318,9 +318,9 @@ def six_panel_transect(
 def main():
     for month in range(5, 8):
         for experiment in ['noise', 'MODISImproved']:
-            six_panel_fig('RAINNC', month, 'd01', experiment, 'mm / 6 hours', save_name = f'pr_{month}_{experiment}_d01', save = True)
-            six_panel_fig('RAINNC', month, 'd02', experiment, 'mm / 6 hours', save_name = f'pr_{month}_{experiment}_d02', save = True)
-            six_panel_transect(month, experiment, 'WVT (kg/m/s)', save_name = f'wvt_{month}_{experiment}', save = True)
+            six_panel_fig('RAINNC', month, 'd01', experiment, 'mm / 6 hours', save_name = f'pr_{month}_{experiment}_d01')
+            six_panel_fig('RAINNC', month, 'd02', experiment, 'mm / 6 hours', save_name = f'pr_{month}_{experiment}_d02')
+            six_panel_transect(month, experiment, 'WVT (kg/m/s)', save_name = f'wvt_{month}_{experiment}')
 
 if __name__ == "__main__":
     main()
