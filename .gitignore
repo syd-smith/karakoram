@@ -11,8 +11,14 @@ wrfruns/wps_k2/*
 .nc
 
 
-wrfruns/wrf_TSKnoise_20*/
-!wrfruns/wrf_TSKnoise_20*/run/
+wrfruns/**
+
+!wrfruns/wrf_TSKnoise_2016/run/
+!wrfruns/wrf_TSKnoise_2017/run/
+!wrfruns/wrf_TSKnoise_2018/run/
+!wrfruns/wrf_TSKnoise_2019/run/
+!wrfruns/wrf_TSKnoise_2020/run/
+
 !wrfruns/wrf_TSKnoise_20*/run/run_wrf.csh
 !wrfruns/wrf_TSKnoise_20*/run/namelist.input
 !wrfruns/wrf_TSKnoise_20*/run/noise_perturbation.py
