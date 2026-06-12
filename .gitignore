@@ -10,15 +10,17 @@ test_run/wrfout/*
 wrfruns/wps_k2/*
 .nc
 
+# allow git to look in these files but not track them
+!wrfruns/
+wrfruns/*
 
-wrfruns/**
+!wrfruns/wrf_TSKnoise_20*
+wrfruns/wrf_TSKnoise_20*/*
 
-!wrfruns/wrf_TSKnoise_2016/run/
-!wrfruns/wrf_TSKnoise_2017/run/
-!wrfruns/wrf_TSKnoise_2018/run/
-!wrfruns/wrf_TSKnoise_2019/run/
-!wrfruns/wrf_TSKnoise_2020/run/
+!wrfruns/wrf_TSKnoise_20*/run/
+wrfruns/wrf_TSKnoise_20*/run/*
 
+# these are the only files git should actually track in wrfruns
 !wrfruns/wrf_TSKnoise_20*/run/run_wrf.csh
 !wrfruns/wrf_TSKnoise_20*/run/namelist.input
 !wrfruns/wrf_TSKnoise_20*/run/noise_perturbation.py
