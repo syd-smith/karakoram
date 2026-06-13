@@ -10,6 +10,8 @@ test_run/wrfout/*
 wrfruns/wps_k2/*
 .nc
 
+wrfruns_old
+
 # allow git to look in these files but not track them
 !wrfruns/
 wrfruns/*
