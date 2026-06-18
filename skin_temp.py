@@ -100,7 +100,7 @@ for ax, exp, label in zip(flat_axs, [noise_data, ctl_data, anom_data], labels):
     
 
 # check out land classifications of red dots
-domain = 'd03'
+domain = 'd01'
 fpath = current_file_directory.parent.parent / 'husile' / 'karakoram' / 'model_result' / 'wps_k2' / f'geo_em.{domain}.nc'
 
 wrf_file = Dataset(fpath)
@@ -113,7 +113,7 @@ ax = plt.axes(projection = ccrs.PlateCarree())
 # create custom color map for land use categories
 colors = plt.cm.jet(np.linspace(0, 1, 25))
 # call out number 16 as black for water bodies
-colors[16] = [0, 0, 0, 1] 
+colors[20] = [0, 0, 0, 1] 
 cmap = mcolors.ListedColormap(colors)
 norm = mcolors.BoundaryNorm(np.arange(0, 26, 1), cmap.N)
 
